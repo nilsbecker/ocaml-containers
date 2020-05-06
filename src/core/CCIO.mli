@@ -1,4 +1,3 @@
-
 (* This file is free software, part of containers. See file "license" for more details. *)
 
 (** {1 IO Utils}
@@ -12,7 +11,7 @@
     - obtain the list of lines of a file:
 
     {[
-      # let l = CCIO.(with_in "/tmp/some_file" read_lines);;
+      # let l = CCIO.(with_in "/tmp/some_file" read_lines_l);;
     ]}
 
     - transfer one file into another:
@@ -21,12 +20,29 @@
       # CCIO.(
           with_in "/tmp/input"
             (fun ic ->
-               let chunks = read_chunks ic in
-               with_out ~flags:[Open_binary] ~mode:0o644 "/tmp/output"
+               let chunks = read_chunks_gen ic in
+               with_out ~flags:[Open_binary; Open_creat] ~mode:0o644 "/tmp/output"
                  (fun oc ->
                     write_gen oc chunks
                  )
             )
+        ) ;;
+    ]}
+
+    - Note that the lifetime of an IO generator is tied to the underlying
+      channel. In the example above, [chunks] must be used in the scope of [ic].
+      This will raise an error: 
+
+    {[
+      # CCIO.(
+          let chunks =
+            with_in "/tmp/input"
+              (fun ic -> read_chunks_gen ic)
+          in
+          with_out ~flags:[Open_binary;Open_creat] ~mode:0o644 "/tmp/output"
+             (fun oc ->
+                write_gen oc chunks
+             )
         ) ;;
     ]}
 
@@ -36,8 +52,9 @@
 
 *)
 
-type 'a or_error = ('a, string) Result.result
-type 'a gen = unit -> 'a option  (** See {!Gen} in the gen library. *)
+type 'a or_error = ('a, string) result
+type 'a gen = unit -> 'a option
+(** See [Gen] in the {{: https://github.com/c-cube/gen} gen library}. *)
 
 (** {2 Input} *)
 
@@ -49,15 +66,19 @@ val with_in : ?mode:int -> ?flags:open_flag list ->
     @raise Sys_error in case of error (same as {!open_in} and {!close_in}).
     @param flags opening flags (default [[Open_text]]). [Open_rdonly] is used in any cases. *)
 
-val read_chunks : ?size:int -> in_channel -> string gen
-(** Read the channel's content into chunks of size [size]. *)
+val read_chunks_gen : ?size:int -> in_channel -> string gen
+(** Read the channel's content into chunks of size [size].
+    {b NOTE} the generator must be used within the lifetime of the channel,
+    see warning at the top of the file. *)
 
 val read_line : in_channel -> string option
 (** Read a line from the channel. Returns [None] if the input is terminated.
     The "\n" is removed from the line. *)
 
-val read_lines : in_channel -> string gen
-(** Read all lines. The generator should be traversed only once. *)
+val read_lines_gen : in_channel -> string gen
+(** Read all lines. The generator should be traversed only once.
+    {b NOTE} the generator must be used within the lifetime of the channel,
+    see warning at the top of the file. *)
 
 val read_lines_l : in_channel -> string list
 (** Read all lines into a list. *)
@@ -108,11 +129,17 @@ val with_in_out : ?mode:int -> ?flags:open_flag list ->
     @raise Sys_error in case of error.
     @since 0.12 *)
 
+val copy_into : ?bufsize:int -> in_channel -> out_channel -> unit
+(** [copy_into ic oc] writes the content of [ic] into [oc].
+    It is a blocking call.
+    @since NEXT_RELEASE *)
+
 (** {2 Misc for Generators} *)
 
 val tee : ('a -> unit) list -> 'a gen -> 'a gen
 (** [tee funs gen] behaves like [gen], but each element is given to
-    every function [f] in [funs] at the time the element is produced. *)
+    every function [f] in [funs] at the time the element is produced.
+    The returned generator will raise any exception that [f] raises *)
 
 (** {2 File and file names}
 

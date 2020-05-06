@@ -1,9 +1,12 @@
 
 (* This file is free software, part of containers. See file "license" for more details. *)
 
-(** {1 Continuation List} *)
+(** {1 Helpers for the standard {b Seq} type}
 
-type 'a sequence = ('a -> unit) -> unit
+    See {{: https://github.com/c-cube/oseq/} oseq} for a richer API.
+*)
+
+type 'a iter = ('a -> unit) -> unit
 type 'a gen = unit -> 'a option
 type 'a equal = 'a -> 'a -> bool
 type 'a ord = 'a -> 'a -> int
@@ -11,10 +14,10 @@ type 'a printer = Format.formatter -> 'a -> unit
 
 (** {2 Basics} *)
 
-type + 'a t = unit ->
-  [ `Nil
-  | `Cons of 'a * 'a t
-  ]
+type + 'a t = unit -> 'a node
+and +'a node = 'a Seq.node =
+  | Nil
+  | Cons of 'a * 'a t
 
 val nil : 'a t
 
@@ -67,6 +70,9 @@ val compare : 'a ord -> 'a t ord
 
 val fold : ('a -> 'b -> 'a) -> 'a -> 'b t -> 'a
 (** Fold on values. *)
+
+val fold_left : ('a -> 'b -> 'a) -> 'a -> 'b t -> 'a
+(** Alias for {!fold} *)
 
 val iter : ('a -> unit) -> 'a t -> unit
 
@@ -256,7 +262,7 @@ val to_array : 'a t -> 'a array
 val to_rev_list : 'a t -> 'a list
 (** Convert to a list, in reverse order. More efficient than {!to_list}. *)
 
-val to_seq : 'a t -> 'a sequence
+val to_iter : 'a t -> 'a iter
 
 val to_gen : 'a t -> 'a gen
 

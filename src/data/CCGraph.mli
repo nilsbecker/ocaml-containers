@@ -14,29 +14,43 @@
     This abstract notion of graph makes it possible to run the algorithms
     on any user-specific type that happens to have a graph structure.
 
-    Many graph algorithms here take a sequence of vertices as input.
+    Many graph algorithms here take an iterator of vertices as input.
+    The helper module {!Iter} contains basic functions for that, as does
+    the [iter] library on opam.
     If the user only has a single vertex (e.g., for a topological sort
-    from a given vertex), she can use [Seq.return x] to build a sequence
+    from a given vertex), they can use [Iter.return x] to build a iter
     of one element.
 
     {b status: unstable}
 
     @since 0.12 *)
 
-(** {2 Sequence Helpers} *)
+(** {2 Iter Helpers} *)
+
+type 'a iter = ('a -> unit) -> unit
+(** A sequence of items of type ['a], possibly infinite
+    @since 2.8 *)
+
+type 'a iter_once = 'a iter
+(** Iter that should be used only once
+    @since 2.8 *)
 
 type 'a sequence = ('a -> unit) -> unit
-(** A sequence of items of type ['a], possibly infinite *)
+(** A sequence of items of type ['a], possibly infinite
+    @deprecate see {!iter} instead *)
+[@@ocaml.deprecated "see iter"]
 
-type 'a sequence_once = 'a sequence
-(** Sequence that should be used only once *)
+type 'a sequence_once = 'a iter
+(** Iter that should be used only once
+    @deprecate see {!iter_once} instead *)
+[@@ocaml.deprecated "see iter_once"]
 
-exception Sequence_once
+exception Iter_once
 (** Raised when a sequence meant to be used once is used several times. *)
 
-module Seq : sig
-  type 'a t = 'a sequence
-  val return : 'a -> 'a sequence
+module Iter : sig
+  type 'a t = 'a iter
+  val return : 'a -> 'a t
   val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
   val map : ('a -> 'b) -> 'a t -> 'b t
   val filter_map : ('a -> 'b option) -> 'a t -> 'b t
@@ -45,16 +59,20 @@ module Seq : sig
   val to_list : 'a t -> 'a list
 end
 
+module Seq = Iter
+(** @deprecated use {!Iter} instead *)
+[@@ocaml.deprecated "use {!Iter} instead"]
+
 (** {2 Interfaces for graphs}
 
     This interface is designed for oriented graphs with labels on edges *)
 
 (** Directed graph with vertices of type ['v] and edges labeled with [e'] *)
-type ('v, 'e) t = ('v -> ('e * 'v) sequence)
+type ('v, 'e) t = ('v -> ('e * 'v) iter)
 
 type ('v, 'e) graph = ('v, 'e) t
 
-val make : ('v -> ('e * 'v) sequence) -> ('v, 'e) t
+val make : ('v -> ('e * 'v) iter) -> ('v, 'e) t
 (** Make a graph by providing the children function. *)
 
 (** {2 Tags}
@@ -107,8 +125,8 @@ module Traverse : sig
   val generic: tbl:'v set ->
     bag:'v bag ->
     graph:('v, 'e) t ->
-    'v sequence ->
-    'v sequence_once
+    'v iter ->
+    'v iter_once
   (** Traversal of the given graph, starting from a sequence
       of vertices, using the given bag to choose the next vertex to
       explore. Each vertex is visited at most once. *)
@@ -116,35 +134,35 @@ module Traverse : sig
   val generic_tag: tags:'v tag_set ->
     bag:'v bag ->
     graph:('v, 'e) t ->
-    'v sequence ->
-    'v sequence_once
+    'v iter ->
+    'v iter_once
   (** One-shot traversal of the graph using a tag set and the given bag. *)
 
   val dfs: tbl:'v set ->
     graph:('v, 'e) t ->
-    'v sequence ->
-    'v sequence_once
+    'v iter ->
+    'v iter_once
 
   val dfs_tag: tags:'v tag_set ->
     graph:('v, 'e) t ->
-    'v sequence ->
-    'v sequence_once
+    'v iter ->
+    'v iter_once
 
   val bfs: tbl:'v set ->
     graph:('v, 'e) t ->
-    'v sequence ->
-    'v sequence_once
+    'v iter ->
+    'v iter_once
 
   val bfs_tag: tags:'v tag_set ->
     graph:('v, 'e) t ->
-    'v sequence ->
-    'v sequence_once
+    'v iter ->
+    'v iter_once
 
   val dijkstra : tbl:'v set ->
     ?dist:('e -> int) ->
     graph:('v, 'e) t ->
-    'v sequence ->
-    ('v * int * ('v,'e) path) sequence_once
+    'v iter ->
+    ('v * int * ('v,'e) path) iter_once
   (** Dijkstra algorithm, traverses a graph in increasing distance order.
       Yields each vertex paired with its distance to the set of initial vertices
       (the smallest distance needed to reach the node from the initial vertices).
@@ -154,8 +172,8 @@ module Traverse : sig
   val dijkstra_tag : ?dist:('e -> int) ->
     tags:'v tag_set ->
     graph:('v, 'e) t ->
-    'v sequence ->
-    ('v * int * ('v,'e) path) sequence_once
+    'v iter ->
+    ('v * int * ('v,'e) path) iter_once
 
   (** {2 More detailed interface} *)
   module Event : sig
@@ -177,16 +195,16 @@ module Traverse : sig
     val dfs: tbl:'v set ->
       eq:('v -> 'v -> bool) ->
       graph:('v, 'e) graph ->
-      'v sequence ->
-      ('v,'e) t sequence_once
+      'v iter ->
+      ('v,'e) t iter_once
     (** Full version of DFS.
         @param eq equality predicate on vertices. *)
 
     val dfs_tag: eq:('v -> 'v -> bool) ->
       tags:'v tag_set ->
       graph:('v, 'e) graph ->
-      'v sequence ->
-      ('v,'e) t sequence_once
+      'v iter ->
+      ('v,'e) t iter_once
       (** Full version of DFS using integer tags.
           @param eq equality predicate on vertices. *)
   end
@@ -198,7 +216,7 @@ val is_dag :
   tbl:'v set ->
   eq:('v -> 'v -> bool) ->
   graph:('v, _) t ->
-  'v sequence ->
+  'v iter ->
   bool
 (** [is_dag ~graph vs] returns [true] if the subset of [graph] reachable
     from [vs] is acyclic.
@@ -212,7 +230,7 @@ val topo_sort : eq:('v -> 'v -> bool) ->
   ?rev:bool ->
   tbl:'v set ->
   graph:('v, 'e) t ->
-  'v sequence ->
+  'v iter ->
   'v list
 (** [topo_sort ~graph seq] returns a list of vertices [l] where each
     element of [l] is reachable from [seq].
@@ -229,9 +247,10 @@ val topo_sort_tag : eq:('v -> 'v -> bool) ->
   ?rev:bool ->
   tags:'v tag_set ->
   graph:('v, 'e) t ->
-  'v sequence ->
+  'v iter ->
   'v list
-(** Same as {!topo_sort} but uses an explicit tag set. *)
+(** Same as {!topo_sort} but uses an explicit tag set.
+    @raise Has_cycle if the graph is not a DAG. *)
 
 (** {2 Lazy Spanning Tree} *)
 
@@ -265,8 +284,8 @@ type 'v scc_state
 
 val scc : tbl:('v, 'v scc_state) table ->
   graph:('v, 'e) t ->
-  'v sequence ->
-  'v list sequence_once
+  'v iter ->
+  'v list iter_once
 (** Strongly connected components reachable from the given vertices.
     Each component is a list of vertices that are all mutually reachable
     in the graph.
@@ -274,7 +293,7 @@ val scc : tbl:('v, 'v scc_state) table ->
     components, and C1 points to C2, then C2 will be yielded before C1).
     Uses {{: https://en.wikipedia.org/wiki/Tarjan's_strongly_connected_components_algorithm} Tarjan's algorithm}.
     @param tbl table used to map nodes to some hidden state.
-    @raise Sequence_once if the result is iterated on more than once.
+    @raise Iter_once if the result is iterated on more than once.
 *)
 
 (** {2 Pretty printing in the DOT (graphviz) format}
@@ -319,6 +338,18 @@ module Dot : sig
       @param attrs_e attributes for edges.
       @param name name of the graph. *)
 
+  val pp_all : tbl:('v,vertex_state) table ->
+    eq:('v -> 'v -> bool) ->
+    ?attrs_v:('v -> attribute list) ->
+    ?attrs_e:('e -> attribute list) ->
+    ?name:string ->
+    graph:('v,'e) t ->
+    Format.formatter ->
+    'v iter ->
+    unit
+  (** Same as {!pp} but starting from several vertices, not just one.
+      @since 2.8 *)
+
   val pp_seq : tbl:('v,vertex_state) table ->
     eq:('v -> 'v -> bool) ->
     ?attrs_v:('v -> attribute list) ->
@@ -326,8 +357,10 @@ module Dot : sig
     ?name:string ->
     graph:('v,'e) t ->
     Format.formatter ->
-    'v sequence ->
+    'v iter ->
     unit
+  (** @deprecated see {!pp_all} instead *)
+  [@@ocaml.deprecated "use {!pp_all} instead"]
 
   val with_out : string -> (Format.formatter -> 'a) -> 'a
   (** Shortcut to open a file and write to it. *)
@@ -377,7 +410,7 @@ module type MAP = sig
 
   val union : 'a t -> 'a t -> 'a t
 
-  val vertices : _ t -> vertex sequence
+  val vertices : _ t -> vertex iter
 
   val vertices_l : _ t -> vertex list
 
@@ -387,11 +420,23 @@ module type MAP = sig
 
   val to_list : 'a t -> (vertex * 'a * vertex) list
 
-  val of_seq : (vertex * 'a * vertex) sequence -> 'a t
+  val of_iter : (vertex * 'a * vertex) iter -> 'a t
+  (** @since 2.8 *)
 
-  val add_seq : (vertex * 'a * vertex) sequence -> 'a t -> 'a t
+  val add_iter : (vertex * 'a * vertex) iter -> 'a t -> 'a t
+  (** @since 2.8 *)
 
-  val to_seq : 'a t -> (vertex * 'a * vertex) sequence
+  val to_iter : 'a t -> (vertex * 'a * vertex) iter
+  (** @since 2.8 *)
+
+  val of_seq : (vertex * 'a * vertex) iter -> 'a t
+  (** @deprecated use {!of_iter} instead *)
+
+  val add_seq : (vertex * 'a * vertex) iter -> 'a t -> 'a t
+  (** @deprecated use {!add_iter} instead *)
+
+  val to_seq : 'a t -> (vertex * 'a * vertex) iter
+  (** @deprecated use {!to_iter} instead *)
 end
 
 module Map(O : Map.OrderedType) : MAP with type vertex = O.t

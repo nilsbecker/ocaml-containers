@@ -3,67 +3,17 @@
 
 (** {1 Basic String Utils} *)
 
+open CCShims_
+
+type 'a iter = ('a -> unit) -> unit
 type 'a gen = unit -> 'a option
-type 'a sequence = ('a -> unit) -> unit
 type 'a klist = unit -> [`Nil | `Cons of 'a * 'a klist]
-
-(* compatibility implementations *)
-
-let init n f =
-  let buf = Bytes.init n f in
-  Bytes.unsafe_to_string buf
-
-(*$T
-  init 3 (fun i -> [|'a'; 'b'; 'c'|].(i)) = "abc"
-  init 0 (fun _ -> assert false) = ""
-*)
-
-let uppercase_ascii = String.map CCChar.uppercase_ascii
-
-let lowercase_ascii = String.map CCChar.lowercase_ascii
-
-let mapi f s = init (String.length s) (fun i -> f i s.[i])
-
-let capitalize_ascii s =
-  mapi
-    (fun i c -> if i=0 then CCChar.uppercase_ascii c else c)
-    s
-
-let uncapitalize_ascii s =
-  mapi
-    (fun i c -> if i=0 then CCChar.lowercase_ascii c else c)
-    s
 
 (* standard implementations *)
 
 include String
 
-module type S = sig
-  type t
-
-  val length : t -> int
-
-  val blit : t -> int -> Bytes.t -> int -> int -> unit
-  (** Like {!String.blit}.
-      Compatible with the [-safe-string] option.
-      @raise Invalid_argument if indices are not valid *)
-
-  val fold : ('a -> char -> 'a) -> 'a -> t -> 'a
-
-  (** {2 Conversions} *)
-
-  val to_gen : t -> char gen
-  val to_seq : t -> char sequence
-  val to_klist : t -> char klist
-  val to_list : t -> char list
-
-  val pp_buf : Buffer.t -> t -> unit
-  val pp : Format.formatter -> t -> unit
-end
-
-let equal (a:string) b = Pervasives.(=) a b
-
-let compare_int (a : int) b = Pervasives.compare a b
+let compare_int (a : int) b = Stdlib.compare a b
 let compare = String.compare
 
 let hash s = Hashtbl.hash s
@@ -456,6 +406,20 @@ module Split = struct
     Split.list_cpy ~by:" " "hello  world aie" = ["hello"; ""; "world"; "aie"]
   *)
 
+  let _mkseq ~drop ~by s k =
+    let by = Find.compile by in
+    let rec make state () = match _split ~by s state with
+      | None -> Seq.Nil
+      | Some (state', 0, 0) when drop.first -> make state' ()
+      | Some (_, i, 0) when drop.last && i=length s -> Seq.Nil
+      | Some (state', i, len) ->
+        Seq.Cons (k s i len , make state')
+    in make (SplitAt 0)
+
+  let std_seq ?(drop=default_drop) ~by s = _mkseq ~drop ~by s _tuple3
+
+  let std_seq_cpy ?(drop=default_drop) ~by s = _mkseq ~drop ~by s String.sub
+
   let _mkklist ~drop ~by s k =
     let by = Find.compile by in
     let rec make state () = match _split ~by s state with
@@ -470,7 +434,7 @@ module Split = struct
 
   let klist_cpy ?(drop=default_drop) ~by s = _mkklist ~drop ~by s String.sub
 
-  let _mkseq ~drop ~by s f k =
+  let _mk_iter ~drop ~by s f k =
     let by = Find.compile by in
     let rec aux state = match _split ~by s state with
       | None -> ()
@@ -479,8 +443,11 @@ module Split = struct
       | Some (state', i, len) -> k (f s i len); aux state'
     in aux (SplitAt 0)
 
-  let seq ?(drop=default_drop) ~by s = _mkseq ~drop ~by s _tuple3
-  let seq_cpy ?(drop=default_drop) ~by s = _mkseq ~drop ~by s String.sub
+  let iter ?(drop=default_drop) ~by s = _mk_iter ~drop ~by s _tuple3
+  let iter_cpy ?(drop=default_drop) ~by s = _mk_iter ~drop ~by s String.sub
+
+  let seq = iter
+  let seq_cpy = iter_cpy
 
   let left_exn ~by s =
     let i = find ~sub:by s in
@@ -514,7 +481,6 @@ module Split = struct
     Split.right ~by:"_" "abcde" = None
     Split.right ~by:"a_" "abcde" = None
   *)
-
 end
 
 let split_on_char c s: _ list =
@@ -534,7 +500,7 @@ let split_on_char c s: _ list =
 let split ~by s = Split.list_cpy ~by s
 
 let compare_versions a b =
-  let of_int s = try Some (int_of_string s) with _ -> None in
+  let of_int s = try Some (int_of_string s) with Failure _ -> None in
   let rec cmp_rec a b = match a(), b() with
     | None, None -> 0
     | Some _, None -> 1
@@ -623,18 +589,19 @@ let compare_natural a b =
     then compare_natural a c < 0 else Q.assume_fail())
 *)
 
-let edit_distance s1 s2 =
+let edit_distance ?(cutoff=max_int) s1 s2 =
   if length s1 = 0
-  then length s2
+  then min cutoff (length s2)
   else if length s2 = 0
-  then length s1
+  then min cutoff (length s1)
   else if equal s1 s2
   then 0
-  else begin
+  else try
     (* distance vectors (v0=previous, v1=current) *)
     let v0 = Array.make (length s2 + 1) 0 in
     let v1 = Array.make (length s2 + 1) 0 in
     (* initialize v0: v0(i) = A(0)(i) = delete i chars from t *)
+    let lower_bound = ref max_int in
     for i = 0 to length s2 do
       v0.(i) <- i
     done;
@@ -645,19 +612,45 @@ let edit_distance s1 s2 =
 
       (* try add/delete/replace operations *)
       for j = 0 to length s2 - 1 do
-        let cost = if Char.compare (String.get s1 i) (String.get s2 j) = 0 then 0 else 1 in
+        let cost = if Char.equal (String.get s1 i) (String.get s2 j) then 0 else 1 in
         v1.(j+1) <- min (v1.(j) + 1) (min (v0.(j+1) + 1) (v0.(j) + cost));
       done;
+
+      if cutoff < Array.length v1 && i <= 2 * cutoff &&
+         2 * cutoff - i < String.length s2 then (
+        lower_bound := min !lower_bound v1.(2 * cutoff - i);
+      );
+      (* did we compute up to the diagonal 2*cutoff+1? *)
+      if cutoff < Array.length v1 && i = cutoff * 2 && !lower_bound >= cutoff then (
+        raise_notrace Exit;
+      );
 
       (* copy v1 into v0 for next iteration *)
       Array.blit v1 0 v0 0 (length s2 + 1);
     done;
     v1.(length s2)
-  end
+  with Exit -> cutoff
 
 (*$Q
   Q.(string_of_size Gen.(0 -- 30)) (fun s -> \
     edit_distance s s = 0)
+  Q.(let p = string_of_size Gen.(0 -- 20) in pair p p) (fun (s1,s2) -> \
+    edit_distance s1 s2 = edit_distance s2 s1)
+  Q.(let p = string_of_size Gen.(0 -- 20) in pair p p) (fun (s1,s2) -> \
+    let e = edit_distance s1 s2 in \
+    let e' = edit_distance ~cutoff:3 s1 s2 in \
+    (if e' < 3 then e=e' else e >= 3) && \
+    (if e <= 3 then e=e' else true))
+*)
+
+(*$= & ~printer:string_of_int
+  2 (edit_distance "hello" "helo!")
+  5 (edit_distance "abcde" "tuvwx")
+  2 (edit_distance ~cutoff:2 "abcde" "tuvwx")
+  1 (edit_distance ("a" ^ String.make 100 '_') ("b"^String.make 100 '_'))
+  1 (edit_distance ~cutoff:4 ("a" ^ String.make 1000 '_') ("b"^String.make 1000 '_'))
+  2 (edit_distance ~cutoff:3 ("a" ^ String.make 1000 '_' ^ "c")\
+       ("b" ^ String.make 1000 '_' ^ "d"))
 *)
 
 (* test that building a from s, and mutating one char of s, yields
@@ -696,7 +689,7 @@ let prefix ~pre s =
   else (
     let rec check i =
       if i=len then true
-      else if Pervasives.(<>) (String.unsafe_get s i) (String.unsafe_get pre i) then false
+      else if Stdlib.(<>) (String.unsafe_get s i) (String.unsafe_get pre i) then false
       else check (i+1)
     in
     check 0
@@ -719,7 +712,7 @@ let suffix ~suf s =
     let off = String.length s - len in
     let rec check i =
       if i=len then true
-      else if Pervasives.(<>) (String.unsafe_get s (off+i)) (String.unsafe_get suf i) then false
+      else if Stdlib.(<>) (String.unsafe_get s (off+i)) (String.unsafe_get suf i) then false
       else check (i+1)
     in
     check 0
@@ -820,11 +813,22 @@ let of_gen g =
     | Some c -> Buffer.add_char b c; aux ()
   in aux ()
 
-let to_seq s k = String.iter k s
+let to_iter s k = String.iter k s
 
-let of_seq seq =
-  let b= Buffer.create 32 in
-  seq (Buffer.add_char b);
+let rec _to_std_seq s i len () =
+  if len=0 then Seq.Nil
+  else Seq.Cons (s.[i], _to_std_seq s (i+1)(len-1))
+
+let to_std_seq s = _to_std_seq s 0 (String.length s)
+
+let of_iter i =
+  let b = Buffer.create 32 in
+  i (Buffer.add_char b);
+  Buffer.contents b
+
+let of_std_seq seq =
+  let b = Buffer.create 32 in
+  Seq.iter (Buffer.add_char b) seq;
   Buffer.contents b
 
 let rec _to_klist s i len () =
@@ -1083,80 +1087,17 @@ let pp_buf buf s =
 let pp fmt s =
   Format.fprintf fmt "\"%s\"" s
 
-module Sub = struct
-  type t = string * int * int
+(* test consistency of interfaces *)
+(*$inject
+  module type L = module type of CCString
+  module type LL = module type of CCStringLabels
+*)
 
-  let make s i ~len =
-    if i<0||len<0||i+len > String.length s then invalid_arg "CCString.Sub.make";
-    s,i,len
+(*$R
+  ignore (module CCStringLabels : L)
+*)
 
-  let full s = s, 0, String.length s
+(*$R
+  ignore (module CCString : LL)
+*)
 
-  let copy (s,i,len) = String.sub s i len
-
-  let underlying (s,_,_) = s
-
-  let sub (s,i,len) i' len' =
-    if i+i' + len' > i+len then invalid_arg "CCString.Sub.sub";
-    (s, i+i',len')
-
-  let length (_,_,l) = l
-
-  let get (s,i,l) j =
-    if j<0 || j>= l then invalid_arg "CCString.Sub.get";
-    String.unsafe_get s (i+j)
-
-  let blit (a1,i1,len1) o1 a2 o2 len =
-    if o1+len>len1 then invalid_arg "CCString.Sub.blit";
-    blit a1 (i1+o1) a2 o2 len
-
-  let fold f acc (s,i,len) =
-    let rec fold_rec f acc s i j =
-      if i = j then acc
-      else fold_rec f (f acc s.[i]) s (i+1) j
-    in fold_rec f acc s i (i+len)
-
-  (*$T
-    let s = Sub.make "abcde" 1 3 in \
-      Sub.fold (fun acc x -> x::acc) [] s = ['d'; 'c'; 'b']
-    Sub.make "abcde" 1 3 |> Sub.copy = "bcd"
-    Sub.full "abcde" |> Sub.copy = "abcde"
-  *)
-
-  (*$T
-    let sub = Sub.make " abc " 1 ~len:3 in \
-    "\"abc\"" = (CCFormat.to_string Sub.pp sub)
-  *)
-
-  (*$= & ~printer:(String.make 1)
-    'b' Sub.(get (make "abc" 1 ~len:2) 0)
-    'c' Sub.(get (make "abc" 1 ~len:2) 1)
-  *)
-
-  (*$QR
-    Q.(printable_string_of_size Gen.(3--10)) (fun s ->
-      let open Sequence.Infix in
-      begin
-        (0 -- (length s-2)
-          >|= fun i -> i, Sub.make s i ~len:(length s-i))
-        >>= fun (i,sub) ->
-        (0 -- (Sub.length sub-1) >|= fun j -> i,j,sub)
-      end
-      |> Sequence.for_all
-        (fun (i,j,sub) -> Sub.get sub j = s.[i+j]))
-  *)
-
-  let to_gen (s,i,len) = _to_gen s i len
-  let to_seq (s,i,len) k =
-    for i=i to i+len-1 do k s.[i] done
-  let to_klist (s,i,len) = _to_klist s i len
-  let to_list (s,i,len) = _to_list s [] i len
-
-  let pp_buf buf (s,i,len) =
-    Buffer.add_char buf '"';
-    Buffer.add_substring buf s i len;
-    Buffer.add_char buf '"'
-
-  let pp fmt s =
-    Format.fprintf fmt "\"%s\"" (copy s)
-end

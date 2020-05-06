@@ -17,11 +17,6 @@ let install_printers = List.iter install_printer
 
 let () =
   install_printers
-    [ "CCHashtbl.pp"
-    ; "CCBV.pp"
-    ; "CCDeque.pp"
-    ; "CCFQueue.pp"
-    ; "CCIntMap.pp"
-    ; "CCPersistentArray.pp"
-    ; "CCSexp.pp"
+    [ "CCHashtbl.pp";
+      "CCSexp.pp";
     ]

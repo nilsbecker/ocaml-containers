@@ -3,7 +3,7 @@
 
 (** {1 Helpers for Format} *)
 
-type 'a sequence = ('a -> unit) -> unit
+type 'a iter = ('a -> unit) -> unit
 
 include Format
 
@@ -78,6 +78,14 @@ let arrayi ?(sep=return ",@ ") pp fmt a =
 
 let seq ?(sep=return ",@ ") pp fmt seq =
   let first = ref true in
+  CCSeq.iter
+    (fun x ->
+       if !first then first := false else sep fmt ();
+       pp fmt x)
+    seq
+
+let iter ?(sep=return ",@ ") pp fmt seq =
+  let first = ref true in
   seq
     (fun x ->
        if !first then first := false else sep fmt ();
@@ -126,6 +134,8 @@ let hbox pp out x =
   Format.pp_close_box out ()
 
 let of_to_string f out x = Format.pp_print_string out (f x)
+
+let exn = of_to_string Printexc.to_string
 
 let const pp x out () = pp out x
 
@@ -294,14 +304,15 @@ let mark_close_tag st ~or_else s =
 (* add color handling to formatter [ppf] *)
 let set_color_tag_handling ppf =
   let open Format in
-  let functions = pp_get_formatter_tag_functions ppf () in
+  let functions = CCShimsFormat_.pp_get_formatter_tag_functions ppf () in
   let st = Stack.create () in (* stack of styles *)
-  let functions' = {functions with
-                      mark_open_tag=(mark_open_tag st ~or_else:functions.mark_open_tag);
-                      mark_close_tag=(mark_close_tag st ~or_else:functions.mark_close_tag);
-                   } in
+  let functions' =
+    CCShimsFormat_.cc_update_funs functions
+      (mark_open_tag st)
+      (mark_close_tag st)
+  in
   pp_set_mark_tags ppf true; (* enable tags *)
-  pp_set_formatter_tag_functions ppf functions'
+  CCShimsFormat_.pp_set_formatter_tag_functions ppf functions'
 
 let set_color_default =
   let first = ref true in
@@ -326,14 +337,14 @@ let set_color_default =
 *)
 
 let with_color s pp out x =
-  Format.pp_open_tag out s;
+  CCShimsFormat_.pp_open_tag out s;
   pp out x;
-  Format.pp_close_tag out ()
+  CCShimsFormat_.pp_close_tag out ()
 
 let with_colorf s out fmt =
-  Format.pp_open_tag out s;
+  CCShimsFormat_.pp_open_tag out s;
   Format.kfprintf
-    (fun out -> Format.pp_close_tag out ())
+    (fun out -> CCShimsFormat_.pp_close_tag out ())
     out fmt
 
 (* c: whether colors are enabled *)
@@ -350,10 +361,10 @@ let with_color_ksf ~f s fmt =
   let buf = Buffer.create 64 in
   let out = Format.formatter_of_buffer buf in
   if !color_enabled then set_color_tag_handling out;
-  Format.pp_open_tag out s;
+  CCShimsFormat_.pp_open_tag out s;
   Format.kfprintf
     (fun out ->
-       Format.pp_close_tag out ();
+       CCShimsFormat_.pp_close_tag out ();
        Format.pp_print_flush out ();
        f (Buffer.contents buf))
     out fmt
@@ -417,8 +428,8 @@ module Dump = struct
   let triple p1 p2 p3 = within "(" ")" (hovbox (triple p1 p2 p3))
   let quad p1 p2 p3 p4 = within "(" ")" (hovbox (quad p1 p2 p3 p4))
   let result' pok perror out = function
-    | Result.Ok x -> Format.fprintf out "(@[Ok %a@])" pok x
-    | Result.Error e -> Format.fprintf out "(@[Error %a@])" perror e
+    | Ok x -> Format.fprintf out "(@[Ok %a@])" pok x
+    | Error e -> Format.fprintf out "(@[Error %a@])" perror e
   let result pok = result' pok string
   let to_string = to_string
 end
@@ -428,5 +439,5 @@ end
   "Some 1" (to_string Dump.(option int) (Some 1))
   "[None;Some \"a b\"]" (to_string Dump.(list (option string)) [None; Some "a b"])
   "[(Ok \"a b c\");(Error \"nope\")]" \
-    (to_string Dump.(list (result string)) [Result.Ok "a b c"; Result.Error "nope"])
+    (to_string Dump.(list (result string)) [Ok "a b c"; Error "nope"])
 *)

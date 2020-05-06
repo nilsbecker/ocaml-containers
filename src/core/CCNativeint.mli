@@ -33,7 +33,7 @@ val ( * ) : t -> t -> t
 val ( / ) : t -> t -> t
 (** Integer division.  Raise [Division_by_zero] if the second
     argument is zero.  This division rounds the real quotient of
-    its arguments towards zero, as specified for {!Pervasives.(/)}. *)
+    its arguments towards zero, as specified for {!Stdlib.(/)}. *)
 
 val ( mod ) : t -> t -> t
 (** [x mod y ] is the integer remainder.
@@ -93,12 +93,8 @@ module Infix : sig
   val (<) : t -> t -> bool
 end
 
-val equal : t -> t -> bool
-(** The equal function for native integers.
-    Like {!Pervasives.(=) x y)}. *)
-
 val hash : t -> int
-(** Like {!Pervasives.abs (to_int x)}. *)
+(** Like {!Stdlib.abs (to_int x)}. *)
 
 (** {2 Conversion} *)
 

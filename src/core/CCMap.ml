@@ -3,7 +3,7 @@
 
 (** {1 Extensions of Standard Map} *)
 
-type 'a sequence = ('a -> unit) -> unit
+type 'a iter = ('a -> unit) -> unit
 type 'a printer = Format.formatter -> 'a -> unit
 
 module type OrderedType = Map.OrderedType
@@ -12,11 +12,11 @@ module type S = sig
   include Map.S
 
   val get : key -> 'a t -> 'a option
-  (** Safe version of {!find} *)
+  (** Safe version of {!find}. *)
 
   val get_or : key -> 'a t -> default:'a -> 'a
   (** [get_or k m ~default] returns the value associated to [k] if present,
-      and returns [default] otherwise (if [k] doesn't belong in [m])
+      and returns [default] otherwise (if [k] doesn't belong in [m]).
       @since 0.16 *)
 
   val update : key -> ('a option -> 'a option) -> 'a t -> 'a t
@@ -26,19 +26,19 @@ module type S = sig
       [add k v' m] is returned. *)
 
   val choose_opt : 'a t -> (key * 'a) option
-  (** Safe version of {!choose}
+  (** Safe version of {!choose}.
       @since 1.5 *)
 
   val min_binding_opt : 'a t -> (key * 'a) option
-  (** Safe version of {!min_binding}
+  (** Safe version of {!min_binding}.
       @since 1.5 *)
 
   val max_binding_opt : 'a t -> (key * 'a) option
-  (** Safe version of {!max_binding}
+  (** Safe version of {!max_binding}.
       @since 1.5 *)
 
   val find_opt : key -> 'a t -> 'a option
-  (** Safe version of {!find}
+  (** Safe version of {!find}.
       @since 1.5 *)
 
   val find_first : (key -> bool) -> 'a t -> key * 'a
@@ -47,7 +47,7 @@ module type S = sig
       @since 1.5 *)
 
   val find_first_opt : (key -> bool) -> 'a t -> (key * 'a) option
-  (** Safe version of {!find_first}
+  (** Safe version of {!find_first}.
       @since 1.5 *)
 
   val merge_safe :
@@ -56,18 +56,29 @@ module type S = sig
   (** [merge_safe ~f a b] merges the maps [a] and [b] together.
       @since 0.17 *)
 
-  val union : (key -> 'a -> 'a -> 'a option) -> 'a t -> 'a t -> 'a t
-  (** Union of both maps, using the function to combine bindings
-      that belong to both inputs
-      @since 1.4 *)
+  val of_iter : (key * 'a) iter -> 'a t
+  (** Like {!of_list}.
+      @since 2.8 *)
 
-  val of_seq : (key * 'a) sequence -> 'a t
-  (** Like {!of_list} *)
+  val add_std_seq : 'a t -> (key * 'a) Seq.t -> 'a t
+  (** Like {!add_list}.
+      @since 2.8 *)
 
-  val add_seq : 'a t -> (key * 'a) sequence -> 'a t
-  (** @since 0.14 *)
+  val of_std_seq : (key * 'a) Seq.t -> 'a t
+  (** Like {!of_list}.
+      @since 2.8 *)
 
-  val to_seq : 'a t -> (key * 'a) sequence
+  val add_iter : 'a t -> (key * 'a) iter -> 'a t
+  (** Like {!add_list}.
+      @since 2.8 *)
+
+  val of_iter : (key * 'a) iter -> 'a t
+  (** Like {!of_list}.
+      @since 2.8 *)
+
+  val to_iter : 'a t -> (key * 'a) iter
+  (** Like {!to_list}.
+      @since 2.8 *)
 
   val of_list : (key * 'a) list -> 'a t
   (** Build a map from the given list of bindings [k_i -> v_i],
@@ -78,12 +89,12 @@ module type S = sig
   val add_list : 'a t -> (key * 'a) list -> 'a t
   (** @since 0.14 *)
 
-  val keys : _ t -> key sequence
-  (** Iterate on keys only
+  val keys : _ t -> key iter
+  (** Iterate on keys only.
       @since 0.15 *)
 
-  val values : 'a t -> 'a sequence
-  (** Iterate on values only
+  val values : 'a t -> 'a iter
+  (** Iterate on values only.
       @since 0.15 *)
 
   val to_list : 'a t -> (key * 'a) list
@@ -182,14 +193,21 @@ module Make(O : Map.OrderedType) = struct
          | Some v1, Some v2 -> f k (`Both (v1,v2)))
       a b
 
-  let add_seq m s =
+  let add_std_seq m s =
+    let m = ref m in
+    Seq.iter (fun (k,v) -> m := add k v !m) s;
+    !m
+
+  let of_std_seq s = add_std_seq empty s
+
+  let add_iter m s =
     let m = ref m in
     s (fun (k,v) -> m := add k v !m);
     !m
 
-  let of_seq s = add_seq empty s
+  let of_iter s = add_iter empty s
 
-  let to_seq m yield =
+  let to_iter m yield =
     iter (fun k v -> yield (k,v)) m
 
   let keys m yield =

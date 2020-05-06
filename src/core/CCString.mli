@@ -5,64 +5,59 @@
 
 (** {1 Basic String Utils} *)
 
+type 'a iter = ('a -> unit) -> unit
+(** Fast internal iterator.
+    @since 2.8 *)
+
 type 'a gen = unit -> 'a option
-type 'a sequence = ('a -> unit) -> unit
 type 'a klist = unit -> [`Nil | `Cons of 'a * 'a klist]
-
-(** {2 Common Signature} *)
-
-module type S = sig
-  type t
-
-  val length : t -> int
-  (** Return the length (number of characters) of the given string. *)
-
-  val blit : t -> int -> Bytes.t -> int -> int -> unit
-  (** Like {!String.blit}.
-      Compatible with the [-safe-string] option.
-      @raise Invalid_argument if indices are not valid. *)
-
-  (*
-  val blit_immut : t -> int -> t -> int -> int -> string
-  (** Immutable version of {!blit}, returning a new string.
-      [blit a i b j len] is the same as [b], but in which
-      the range [j, ..., j+len] is replaced by [a.[i], ..., a.[i + len]].
-      @raise Invalid_argument if indices are not valid. *)
-     *)
-
-  val fold : ('a -> char -> 'a) -> 'a -> t -> 'a
-  (** Fold on chars by increasing index.
-      @since 0.7 *)
-
-  (** {2 Conversions} *)
-
-  val to_gen : t -> char gen
-  (** Return the [gen] of characters contained in the string. *)
-
-  val to_seq : t -> char sequence
-  (** Return the [sequence] of characters contained in the string. *)
-
-  val to_klist : t -> char klist
-  (** Return the [klist] of characters contained in the string. *)
-
-  val to_list : t -> char list
-  (** Return the list of characters contained in the string. *)
-
-  val pp_buf : Buffer.t -> t -> unit
-  (** Renamed from [pp] since 2.0. *)
-
-  val pp : Format.formatter -> t -> unit
-  (** Print the string within quotes.
-
-      Renamed from [print] since 2.0. *)
-end
-
-(** {2 Strings} *)
 
 include module type of struct include String end
 
-val equal : string -> string -> bool
-(** Equality function on strings. *)
+val length : t -> int
+(** Return the length (number of characters) of the given string. *)
+
+val blit : t -> int -> Bytes.t -> int -> int -> unit
+(** Like {!String.blit}.
+    Compatible with the [-safe-string] option.
+    @raise Invalid_argument if indices are not valid. *)
+
+(*
+val blit_immut : t -> int -> t -> int -> int -> string
+(** Immutable version of {!blit}, returning a new string.
+    [blit a i b j len] is the same as [b], but in which
+    the range [j, ..., j+len] is replaced by [a.[i], ..., a.[i + len]].
+    @raise Invalid_argument if indices are not valid. *)
+   *)
+
+val fold : ('a -> char -> 'a) -> 'a -> t -> 'a
+(** Fold on chars by increasing index.
+    @since 0.7 *)
+
+(** {2 Conversions} *)
+
+val to_gen : t -> char gen
+(** Return the [gen] of characters contained in the string. *)
+
+val to_iter : t -> char iter
+(** Return the [iter] of characters contained in the string.
+    @since 2.8 *)
+
+val to_std_seq : t -> char Seq.t
+(** [to_std_seq s] returns a [Seq.t] of the bytes in [s].
+    @since 2.8
+*)
+
+val to_list : t -> char list
+(** Return the list of characters contained in the string. *)
+
+val pp_buf : Buffer.t -> t -> unit
+(** Renamed from [pp] since 2.0. *)
+
+val pp : Format.formatter -> t -> unit
+(** Print the string within quotes.
+
+    Renamed from [print] since 2.0. *)
 
 val compare : string -> string -> int
 
@@ -71,10 +66,6 @@ val is_empty : string -> bool
     @since 1.5 *)
 
 val hash : string -> int
-
-val init : int -> (int -> char) -> string
-(** Like [Array.init].
-    @since 0.3.3 *)
 
 val rev : string -> string
 (** [rev s] returns the reverse of [s].
@@ -94,11 +85,13 @@ val of_char : char -> string
 val of_gen : char gen -> string
 (** Convert a [gen] of characters to a string. *)
 
-val of_seq : char sequence -> string
-(** Convert a [sequence] of characters to a string. *)
+val of_iter : char iter -> string
+(** Convert a [iter] of characters to a string.
+    @since 2.8 *)
 
-val of_klist : char klist -> string
-(** Convert a [klist] of characters to a string. *)
+val of_std_seq : char Seq.t -> string
+(** Convert a [sequence] of characters to a string.
+    @since 2.8 *)
 
 val of_list : char list -> string
 (** Convert a list of characters to a string. *)
@@ -145,8 +138,8 @@ val replace : ?which:[`Left|`Right|`All] -> sub:string -> by:string -> string ->
     @since 0.14 *)
 
 val is_sub : sub:string -> int -> string -> int -> sub_len:int -> bool
-(** [is_sub ~sub i s j ~len] returns [true] iff the substring of
-    [sub] starting at position [i] and of length [len] is a substring
+(** [is_sub ~sub i s j ~sub_len] returns [true] iff the substring of
+    [sub] starting at position [i] and of length [sub_len] is a substring
     of [s] starting at position [j]. *)
 
 val repeat : string -> int -> string
@@ -211,18 +204,6 @@ val iter : (char -> unit) -> string -> unit
 (** Alias to {!String.iter}.
     @since 0.12 *)
 
-val iteri : (int -> char -> unit) -> string -> unit
-(** Iter on chars with their index.
-    @since 0.12 *)
-
-val map : (char -> char) -> string -> string
-(** Map chars.
-    @since 0.12 *)
-
-val mapi : (int -> char -> char) -> string -> string
-(** Map chars with their index.
-    @since 0.12 *)
-
 val filter_map : (char -> char option) -> string -> string
 (** [filter_map f s] calls [(f a0) (f a1) ... (f an)] where [a0 ... an] are the characters of s.
     It returns the string of characters [ci] such as [f ai = Some ci] (when [f] returns [None],
@@ -245,8 +226,6 @@ val for_all : (char -> bool) -> string -> bool
 val exists : (char -> bool) -> string -> bool
 (** True for some char?
     @since 0.12 *)
-
-include S with type t := string
 
 val drop_while : (char -> bool) -> t -> t
 (** [drop_while f s] discards any characters starting from the left,
@@ -302,22 +281,6 @@ val exists2 : (char -> char -> bool) -> string -> string -> bool
 
     Those functions are deprecated in {!String} since 4.03, so we provide
     a stable alias for them even in older versions. *)
-
-val capitalize_ascii : string -> string
-(** See {!String}.
-    @since 0.18 *)
-
-val uncapitalize_ascii : string -> string
-(** See {!String}.
-    @since 0.18 *)
-
-val uppercase_ascii : string -> string
-(** See {!String}.
-    @since 0.18 *)
-
-val lowercase_ascii : string -> string
-(** See {!String}.
-    @since 0.18 *)
 
 val equal_caseless : string -> string -> bool
 (** Comparison without respect to {b ascii} lowercase.
@@ -379,9 +342,11 @@ module Split : sig
 
   val gen : ?drop:drop_if_empty -> by:string -> string -> (string*int*int) gen
 
-  val seq : ?drop:drop_if_empty -> by:string -> string -> (string*int*int) sequence
+  val iter : ?drop:drop_if_empty -> by:string -> string -> (string*int*int) iter
+  (** @since 2.8 *)
 
-  val klist : ?drop:drop_if_empty -> by:string -> string -> (string*int*int) klist
+  val std_seq : ?drop:drop_if_empty -> by:string -> string -> (string*int*int) Seq.t
+  (** @since 2.8 *)
 
   (** {4 Copying functions}
 
@@ -392,9 +357,11 @@ module Split : sig
 
   val gen_cpy : ?drop:drop_if_empty -> by:string -> string -> string gen
 
-  val seq_cpy : ?drop:drop_if_empty -> by:string -> string -> string sequence
+  val iter_cpy : ?drop:drop_if_empty -> by:string -> string -> string iter 
+  (** @since 2.8 *)
 
-  val klist_cpy : ?drop:drop_if_empty -> by:string -> string -> string klist
+  val std_seq_cpy : ?drop:drop_if_empty -> by:string -> string -> string Seq.t
+  (** @since 2.8 *)
 
   val left : by:string -> string -> (string * string) option
   (** Split on the first occurrence of [by] from the leftmost part of
@@ -438,37 +405,11 @@ val compare_natural : string -> string -> int
     https://en.wikipedia.org/wiki/Natural_sort_order
     @since 1.3 *)
 
-val edit_distance : string -> string -> int
+val edit_distance : ?cutoff:int -> string -> string -> int
 (** Edition distance between two strings. This satisfies the classical
     distance axioms: it is always positive, symmetric, and satisfies
-    the formula [distance a b + distance b c >= distance a c]. *)
-
-(** {2 Slices}
-
-    A contiguous part of a string *)
-
-module Sub : sig
-  type t = string * int * int
-  (** A string, an offset, and the length of the slice. *)
-
-  val make : string -> int -> len:int -> t
-
-  val full : string -> t
-  (** Full string. *)
-
-  val copy : t -> string
-  (** Make a copy of the substring. *)
-
-  val underlying : t -> string
-
-  val sub : t -> int -> int -> t
-  (** Sub-slice. *)
-
-  val get : t -> int -> char
-  (** [get s i] gets the [i]-th element, or fails.
-      @raise Invalid_argument if the index is not within [0 ... length - 1].
-      @since 1.2 *)
-
-  include S with type t := t
-
-end
+    the formula [distance a b + distance b c >= distance a c].
+    @param cutoff if provided, it's a cap on both the number of iterations,
+      and on the result. (since 3.0). This is useful if you just want to
+    check whether the edit distance is less or equal than 2 (use cutoff of 3).
+*)

@@ -1,18 +1,19 @@
-
 (* This file is free software, part of containers. See file "license" for more details. *)
 
 (** {1 Error Monad} *)
 
-type 'a sequence = ('a -> unit) -> unit
+type 'a iter = ('a -> unit) -> unit
 type 'a equal = 'a -> 'a -> bool
 type 'a ord = 'a -> 'a -> int
 type 'a printer = Format.formatter -> 'a -> unit
 
 (** {2 Basics} *)
 
-include Result
+type nonrec (+'good, +'bad) result = ('good, 'bad) result =
+  | Ok of 'good
+  | Error of 'bad
 
-type (+'good, +'bad) t = ('good, 'bad) Result.result =
+type (+'good, +'bad) t = ('good, 'bad) result =
   | Ok of 'good
   | Error of 'bad
 
@@ -115,6 +116,15 @@ let get_or_failwith = function
   try ignore @@ get_or_failwith (Error "e"); false with Failure msg -> msg = "e"
 *)
 
+let get_lazy default_fn x = match x with
+  | Ok x -> x
+  | Error e -> default_fn e
+
+(*$= get_lazy
+  (get_lazy (fun _ -> 2) (Ok 1)) (1)
+  (get_lazy (fun _ -> 2) (Error "error")) (2)
+*)
+
 let map_or f e ~default = match e with
   | Ok x -> f x
   | Error _ -> default
@@ -126,10 +136,6 @@ let catch e ~ok ~err = match e with
 let flat_map f e = match e with
   | Ok x -> f x
   | Error s -> Error s
-
-let (>|=) e f = map f e
-
-let (>>=) e f = flat_map f e
 
 let equal ~err eq a b = match a, b with
   | Ok x, Ok y -> eq x y
@@ -218,9 +224,22 @@ let map_l f l =
         | Ok y -> map (y::acc) l'
   in map [] l
 
+let flatten_l l =
+  let rec loop acc l = match l with
+    | [] -> Ok (List.rev acc)
+    | Ok x::l' -> loop (x::acc) l'
+    | Error e::_ -> Error e
+  in loop [] l
+
+(*$=
+  (Ok []) (flatten_l [])
+  (Ok [1;2;3]) (flatten_l [Ok 1; Ok 2; Ok 3])
+  (Error "ohno") (flatten_l [Ok 1; Error "ohno"; Ok 2; Ok 3; Error "wut"])
+*)
+
 exception LocalExit
 
-let fold_seq f acc seq =
+let fold_iter f acc seq =
   let err = ref None in
   try
     let acc = ref acc in
@@ -232,7 +251,7 @@ let fold_seq f acc seq =
   with LocalExit ->
   match !err with None -> assert false | Some s -> Error s
 
-let fold_l f acc l = fold_seq f acc (fun k -> List.iter k l)
+let fold_l f acc l = fold_iter f acc (fun k -> List.iter k l)
 
 (** {2 Misc} *)
 
@@ -259,10 +278,22 @@ let retry n f =
 (** {2 Infix} *)
 
 module Infix = struct
-  let (>>=) = (>>=)
-  let (>|=) = (>|=)
+  let (>|=) e f = map f e
+  let (>>=) e f = flat_map f e
   let (<*>) = (<*>)
+
+  include CCShimsMkLet_.Make2(struct
+      type ('a,'e) t = ('a,'e) result
+      let (>>=) = (>>=)
+      let (>|=) = (>|=)
+      let monoid_product x1 x2 = match x1, x2 with
+        | Ok x, Ok y -> Ok (x,y)
+        | Error e, _ -> Error e
+        | _, Error e -> Error e
+    end)
 end
+
+include Infix
 
 (** {2 Monadic Operations} *)
 
@@ -305,7 +336,11 @@ let of_opt = function
   | None -> Error "of_opt"
   | Some x -> Ok x
 
-let to_seq e k = match e with
+let to_std_seq e () = match e with
+  | Ok x -> Seq.Cons (x, Seq.empty)
+  | Error _ -> Seq.Nil
+
+let to_iter e k = match e with
   | Ok x -> k x
   | Error _ -> ()
 

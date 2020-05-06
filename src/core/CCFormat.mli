@@ -5,7 +5,7 @@
 
     @since 0.8 *)
 
-type 'a sequence = ('a -> unit) -> unit
+type 'a iter = ('a -> unit) -> unit
 
 (* include Format, and alias all its types.
    see https://discuss.ocaml.org/t/extend-existing-module/1389/4
@@ -29,12 +29,16 @@ val bool : bool printer
 val float3 : float printer (* 3 digits after . *)
 val float : float printer
 
+val exn : exn printer
+(** Printer using {!Printexc.to_string}.
+    @since NEXT_RELEASE *)
+
 val newline : unit printer
 (** Force newline (see {!Format.pp_force_newline}).
     @since 1.2 *)
 
 val substring : (string * int * int) printer
-(** Print the substring [(s,i,len)], where [i] is the offset
+(** [substring (s,i,len)] prints the substring [(s,i,len)], where [i] is the offset
     in [s] and [len] the number of bytes in the substring.
     @raise Invalid_argument if the triple [(s,i,len)] does not
     describe a proper substring.
@@ -65,7 +69,8 @@ val string_quoted : string printer
 val list : ?sep:unit printer -> 'a printer -> 'a list printer
 val array : ?sep:unit printer -> 'a printer -> 'a array printer
 val arrayi : ?sep:unit printer -> (int * 'a) printer -> 'a array printer
-val seq : ?sep:unit printer -> 'a printer -> 'a sequence printer
+val seq : ?sep:unit printer -> 'a printer -> 'a Seq.t printer
+val iter : ?sep:unit printer -> 'a printer -> 'a iter printer
 
 val opt : 'a printer -> 'a option printer
 (** [opt pp] prints options as follows:
@@ -329,8 +334,8 @@ module Dump : sig
   val quad :
     'a t -> 'b t -> 'c t -> 'd t ->
     ('a * 'b * 'c * 'd) t
-  val result : 'a t -> ('a, string) Result.result t
-  val result' : 'a t -> 'e t -> ('a, 'e) Result.result t
+  val result : 'a t -> ('a, string) result t
+  val result' : 'a t -> 'e t -> ('a, 'e) result t
   val to_string : 'a t -> 'a -> string
   (** Alias to {!CCFormat.to_string}. *)
 end

@@ -1,4 +1,3 @@
-
 (* This file is free software, part of containers. See file "license" for more details. *)
 
 (** {1 Growable, mutable vector} *)
@@ -19,7 +18,10 @@ type 'a ro_vector = ('a, ro) t
 (** Alias for immutable vectors.
     @since 0.15 *)
 
-type 'a sequence = ('a -> unit) -> unit
+type 'a iter = ('a -> unit) -> unit
+(** Fast internal iterator.
+    @since 2.8 *)
+
 type 'a klist = unit -> [`Nil | `Cons of 'a * 'a klist]
 type 'a gen = unit -> 'a option
 type 'a equal = 'a -> 'a -> bool
@@ -36,9 +38,8 @@ val create : unit -> ('a, rw) t
 (** Create a new, empty vector. *)
 
 val create_with : ?capacity:int -> 'a -> ('a, rw) t
-(** Create a new vector, using the given value as a filler.
-    @param capacity the size of the underlying array.
-    {b caution}: the value will likely not be GC'd before the vector is. *)
+(** Create a new vector, the value is used to enforce the type the new vector.
+    @param capacity the size of the underlying array. *)
 
 val return : 'a -> ('a, 'mut) t
 (** Singleton vector.
@@ -53,10 +54,15 @@ val init : int -> (int -> 'a) -> ('a, 'mut) t
 val clear : ('a, rw) t -> unit
 (** Clear the content of the vector. *)
 
+val clear_and_reset : ('a, rw) t -> unit
+(** Clear the content of the vector, and deallocate the underlying array,
+    removing references to all the elements.
+    @since 2.8 *)
+
 val ensure_with : init:'a -> ('a, rw) t -> int -> unit
 (** Hint to the vector that it should have at least the given capacity.
-    @param init if [capacity v = 0], used as a filler
-      element for the underlying array (see {!create_with}).
+    @param init if [capacity v = 0], used to enforce the type of the vector
+      (see {!create_with}).
     @since 0.14 *)
 
 val ensure : ('a, rw) t -> int -> unit
@@ -76,8 +82,13 @@ val append : ('a, rw) t -> ('a, _) t -> unit
 val append_array : ('a, rw) t -> 'a array -> unit
 (** Like {!append}, with an array. *)
 
-val append_seq : ('a, rw) t -> 'a sequence -> unit
-(** Append content of sequence. *)
+val append_iter : ('a, rw) t -> 'a iter -> unit
+(** Append content of iterator.
+    @since 2.8 *)
+
+val append_std_seq : ('a, rw) t -> 'a Seq.t -> unit
+(** Append content of iterator.
+    @since 2.8 *)
 
 val append_list : ('a, rw) t -> 'a list -> unit
 (** Append content of list.
@@ -118,15 +129,22 @@ val shrink : ('a, rw) t -> int -> unit
 (** Shrink to the given size (remove elements above this size).
     Does nothing if the parameter is bigger than the current size. *)
 
+val shrink_to_fit : ('a, _) t -> unit
+(** Shrink internal array to fit the size of the vector
+    @since 2.8 *)
+
 val member : eq:('a -> 'a -> bool) -> 'a -> ('a, _) t -> bool
 (** Is the element a member of the vector? *)
 
 val sort : ('a -> 'a -> int) -> ('a, _) t -> ('a, 'mut) t
 (** Sort the vector, returning a copy of it that is sorted
-    w.r.t the given ordering. The vector itself is unchanged. *)
+    w.r.t the given ordering. The vector itself is unchanged.
+    The underlying array of the new vector can be smaller than
+    the original one. *)
 
 val sort' : ('a -> 'a -> int) -> ('a, rw) t -> unit
-(** Sort the vector in place (modifying it). *)
+(** Sort the vector in place (modifying it).
+    This function change the size of the underlying array. *)
 
 val uniq_sort : ('a -> 'a -> int) -> ('a, rw) t -> unit
 (** Sort the array and remove duplicates, in place (e.g. modifying
@@ -141,6 +159,11 @@ val iteri : (int -> 'a -> unit) -> ('a,_) t -> unit
 val map : ('a -> 'b) -> ('a,_) t -> ('b, 'mut) t
 (** Map elements of the vector, yielding a new vector. *)
 
+val mapi : (int -> 'a -> 'b) -> ('a,_) t -> ('b, 'mut) t
+(** [map f v] is just like {!map}, but it also passes in the index
+    of each element as the first argument to the function [f].
+    @since 2.8 *)
+
 val map_in_place : ('a -> 'a) -> ('a,_) t -> unit
 (** Map elements of the vector in place
     @since 2.3 *)
@@ -149,8 +172,9 @@ val filter : ('a -> bool) -> ('a,_) t -> ('a, 'mut) t
 (** Filter elements from the vector. [filter p v] leaves [v] unchanged but
     returns a new vector that only contains elements of [v] satisfying [p]. *)
 
-val filter' : ('a -> bool) -> ('a, rw) t -> unit
-(** Filter elements in place. *)
+val filter_in_place : ('a -> bool) -> ('a, rw) t -> unit
+(** Filter elements from the vector in place.
+    @since NEXT_RELEASE *)
 
 val fold : ('b -> 'a -> 'b) -> 'b -> ('a,_) t -> 'b
 (** Fold on elements of the vector *)
@@ -183,15 +207,18 @@ val filter_map_in_place : ('a -> 'a option) -> ('a,_) t -> unit
 val flat_map : ('a -> ('b,_) t) -> ('a,_) t -> ('b, 'mut) t
 (** Map each element to a sub-vector. *)
 
-val flat_map_seq : ('a -> 'b sequence) -> ('a,_) t -> ('b, 'mut) t
-(** Like {!flat_map}, but using {!sequence} for
-    intermediate collections.
-    @since 0.14 *)
+val flat_map_std_seq : ('a -> 'b Seq.t) -> ('a,_) t -> ('b, 'mut) t
+(** Like {!flat_map}, but using [Seq] for intermediate collections.
+    @since 2.8 *)
 
 val flat_map_list : ('a -> 'b list) -> ('a,_) t -> ('b, 'mut) t
 (** Like {!flat_map}, but using {!list} for
     intermediate collections.
     @since 0.14 *)
+
+val monoid_product : ('a -> 'b -> 'c) -> ('a,_) t -> ('b,_) t -> ('c,_) t
+(** All combinaisons of tuples from the two vectors are passed to the function.
+    @since 2.8 *)
 
 val (>>=) : ('a,_) t -> ('a -> ('b,_) t) -> ('b, 'mut) t
 (** Infix version of {!flat_map}. *)
@@ -207,9 +234,17 @@ val set : ('a, rw) t -> int -> 'a -> unit
 (** Modify element at given index, or
     @raise Invalid_argument if bad index. *)
 
-val remove : ('a, rw) t -> int -> unit
-(** Remove the [n-th] element of the vector. Does {b NOT} preserve the order
-    of the elements (might swap with the last element). *)
+val remove_and_shift : ('a, rw) t -> int -> unit
+(** [remove v i] remove the [i-th] element from [v].
+    Move elements that are after the [i-th] in [v].
+    Preserve the order of the elements in [v].
+    See {!remove_unordered} for constant time function. *)
+
+val remove_unordered : ('a, rw) t -> int -> unit
+(** [remove_unordered v i] remove the [i-th] element from [v].
+    Does {b NOT} preserve the order of the elements in [v]
+    (might swap with the last element).
+    See {!remove_and_shift} if you want to keep the ordering. *)
 
 val rev : ('a,_) t -> ('a, 'mut) t
 (** Reverse the vector. *)
@@ -257,35 +292,60 @@ val to_array : ('a,_) t -> 'a array
 val to_list : ('a,_) t -> 'a list
 (** Return a list with the elements contained in the vector. *)
 
-val of_seq : ?init:('a,rw) t -> 'a sequence -> ('a, rw) t
+val of_iter : ?init:('a,rw) t -> 'a iter -> ('a, rw) t
+(** Convert an Iterator to a vector.
+    @since 2.8.1 *)
 
-val to_seq : ('a,_) t -> 'a sequence
-(** Return a [sequence] with the elements contained in the vector. *)
+val of_std_seq : ?init:('a,rw) t -> 'a Seq.t -> ('a, rw) t
+(** Convert an Iterator to a vector.
+    @since 2.8.1 *)
 
-val to_seq_rev : ('a, _) t -> 'a sequence
-(** [to_seq_rev v] returns the sequence of elements of [v] in reverse order,
+val to_iter : ('a,_) t -> 'a iter
+(** Return a [iter] with the elements contained in the vector.
+    @since 2.8
+*)
+
+val to_iter_rev : ('a,_) t -> 'a iter
+(** [to_iter_rev v] returns the sequence of elements of [v] in reverse order,
     that is, the last elements of [v] are iterated on first.
-    @since 0.14 *)
+    @since 2.8
+*)
+
+val to_std_seq : ('a,_) t -> 'a Seq.t
+(** Return an iterator with the elements contained in the vector.
+    @since 2.8
+*)
+
+val to_std_seq_rev : ('a,_) t -> 'a Seq.t
+(** [to_seq v] returns the sequence of elements of [v] in reverse order,
+    that is, the last elements of [v] are iterated on first.
+    @since 2.8
+*)
 
 val slice : ('a,rw) t -> ('a array * int * int)
 (** Vector as an array slice. By doing it we expose the internal array, so
     be careful!. *)
 
-val slice_seq : ('a,_) t -> int -> int -> 'a sequence
+val slice_iter : ('a,_) t -> int -> int -> 'a iter
 (** [slice_seq v start len] is the sequence of elements from [v.(start)]
-    to [v.(start+len-1)]. *)
-
-val fill_empty_slots_with : ('a, _) t -> 'a -> unit
-(** [fill_empty_slots_with v x] puts [x] in the slots of [v]'s underlying
-    array that are not used (ie in the last [capacity v - length v] slots).
-    This is useful if you removed some elements from the vector and
-    want to be sure they can be GC'd by erasing them from the vector.
-    @since 2.4 *)
+    to [v.(start+len-1)].
+    @since NEXT_RELEASE
+*)
 
 val of_klist : ?init:('a, rw) t -> 'a klist -> ('a, rw) t
 val to_klist : ('a,_) t -> 'a klist
 val of_gen : ?init:('a, rw) t -> 'a gen -> ('a, rw) t
 val to_gen : ('a,_) t -> 'a gen
 
+val to_string :
+  ?start:string -> ?stop:string -> ?sep:string ->
+  ('a -> string) -> ('a,_) t -> string
+(**  Print the vector in a string
+     @since 2.7 *)
+
 val pp : ?start:string -> ?stop:string -> ?sep:string ->
   'a printer -> ('a,_) t printer
+
+(** Let operators on OCaml >= 4.08.0, nothing otherwise
+    @since 2.8 *)
+include CCShimsMkLet_.S2 with type ('a,'e) t_let2 := ('a,'e) t

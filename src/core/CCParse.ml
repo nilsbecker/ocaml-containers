@@ -1,7 +1,8 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (** {1 Very Simple Parser Combinators} *)
+
+open CCShims_
 
 (*$inject
   module T = struct
@@ -99,7 +100,7 @@
   ()
 *)
 
-type 'a or_error = ('a, string) Result.result
+type 'a or_error = ('a, string) result
 
 type line_num = int
 type col_num = int
@@ -139,8 +140,8 @@ type state = {
 
 exception ParseError of parse_branch * (unit -> string)
 
-let char_equal (a : char) b = Pervasives.(=) a b
-let string_equal (a : string) b = Pervasives.(=) a b
+let char_equal (a : char) b = Stdlib.(=) a b
+let string_equal (a : string) b = Stdlib.(=) a b
 
 let rec string_of_branch l =
   let pp_s () = function
@@ -345,7 +346,8 @@ let rec many_rec : 'a t -> 'a list -> 'a list t = fun p acc st ~ok ~err ->
     p st
       ~ok:(fun x ->
         let i = pos st in
-        many_rec p (x :: acc) st ~ok
+        let acc = x :: acc in
+        many_rec p acc st ~ok
           ~err:(fun _ ->
             backtrack st i;
             ok(List.rev acc))
@@ -353,6 +355,17 @@ let rec many_rec : 'a t -> 'a list -> 'a list t = fun p acc st ~ok ~err ->
 
 let many : 'a t -> 'a list t
   = fun p st ~ok ~err -> many_rec p [] st ~ok ~err
+
+(*$R
+  let p0 = skip_white *> U.int in
+  let p = (skip_white *> char '(' *> many p0) <* try_ (skip_white <* char ')') in
+  let printer =  CCFormat.(to_string @@ Dump.result  @@ Dump.list int) in
+  assert_equal ~printer
+    (Ok [1;2;3]) (parse_string p "(1 2 3)");
+  assert_equal ~printer
+    (Ok [1;2; -30; 4]) (parse_string p "( 1 2    -30 4 )")
+  *)
+
 
 let many1 : 'a t -> 'a list t =
   fun p st ~ok ~err ->
@@ -430,10 +443,10 @@ let parse_exn p st =
     | None -> assert false
     | Some x -> x
 
-let exn_to_err e =Result.Error (Printexc.to_string e)
+let exn_to_err e = Error (Printexc.to_string e)
 
 let parse p st =
-  try Result.Ok (parse_exn p st)
+  try Ok (parse_exn p st)
   with e -> exn_to_err e
 
 let parse_string_exn p s = parse_exn p (state_of_string s)
@@ -466,7 +479,7 @@ let parse_file_exn p file =
     raise e
 
 let parse_file p file =
-  try Result.Ok (parse_file_exn p file)
+  try Ok (parse_file_exn p file)
   with e -> exn_to_err e
 
 module Infix = struct
@@ -514,3 +527,9 @@ module U = struct
       p3 >>= fun x3 ->
     string stop *> return (x1,x2,x3)
 end
+
+include CCShimsMkLet_.Make(struct
+    type nonrec 'a t = 'a t
+    include Infix
+    let monoid_product a1 a2 = pure (fun x y ->x,y) <*> a1 <*> a2
+  end)

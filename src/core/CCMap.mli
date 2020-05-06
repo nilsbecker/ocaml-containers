@@ -6,7 +6,10 @@
     Provide useful functions and iterators on [Map.S]
     @since 0.5 *)
 
-type 'a sequence = ('a -> unit) -> unit
+type 'a iter = ('a -> unit) -> unit
+(** Fast internal iterator.
+    @since 2.8 *)
+
 type 'a printer = Format.formatter -> 'a -> unit
 
 module type OrderedType = Map.OrderedType
@@ -60,18 +63,29 @@ module type S = sig
   (** [merge_safe ~f a b] merges the maps [a] and [b] together.
       @since 0.17 *)
 
-  val union : (key -> 'a -> 'a -> 'a option) -> 'a t -> 'a t -> 'a t
-  (** Union of both maps, using the function to combine bindings
-      that belong to both inputs.
-      @since 1.4 *)
+  val of_iter : (key * 'a) iter -> 'a t
+  (** Like {!of_list}.
+      @since 2.8 *)
 
-  val of_seq : (key * 'a) sequence -> 'a t
-  (** Like {!of_list}. *)
+  val add_std_seq : 'a t -> (key * 'a) Seq.t -> 'a t
+  (** Like {!add_list}.
+      @since 2.8 *)
 
-  val add_seq : 'a t -> (key * 'a) sequence -> 'a t
-  (** @since 0.14 *)
+  val of_std_seq : (key * 'a) Seq.t -> 'a t
+  (** Like {!of_list}.
+      @since 2.8 *)
 
-  val to_seq : 'a t -> (key * 'a) sequence
+  val add_iter : 'a t -> (key * 'a) iter -> 'a t
+  (** Like {!add_list}.
+      @since 2.8 *)
+
+  val of_iter : (key * 'a) iter -> 'a t
+  (** Like {!of_list}.
+      @since 2.8 *)
+
+  val to_iter : 'a t -> (key * 'a) iter
+  (** Like {!to_list}.
+      @since 2.8 *)
 
   val of_list : (key * 'a) list -> 'a t
   (** Build a map from the given list of bindings [k_i -> v_i],
@@ -82,11 +96,11 @@ module type S = sig
   val add_list : 'a t -> (key * 'a) list -> 'a t
   (** @since 0.14 *)
 
-  val keys : _ t -> key sequence
+  val keys : _ t -> key iter
   (** Iterate on keys only.
       @since 0.15 *)
 
-  val values : 'a t -> 'a sequence
+  val values : 'a t -> 'a iter
   (** Iterate on values only.
       @since 0.15 *)
 

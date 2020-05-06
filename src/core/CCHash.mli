@@ -43,8 +43,8 @@ val if_ : bool -> 'a t -> 'a t -> 'a t
 (** Decide which hash function to use depending on the boolean. *)
 
 val poly : 'a t
-(** The regular polymorphic hash function.
-    [poly x] is [Hashtbl.hash x]. *)
+(** [poly x] is [Hashtbl.hash x].
+    The regular polymorphic hash function. *)
 
 val list_comm : 'a t -> 'a list t
 (** Commutative version of {!list}. Lists that are equal up to permutation
@@ -72,10 +72,11 @@ val combine6 : hash -> hash -> hash -> hash -> hash -> hash -> hash
 
 (** {2 Iterators} *)
 
-type 'a sequence = ('a -> unit) -> unit
+type 'a iter = ('a -> unit) -> unit
 type 'a gen = unit -> 'a option
 type 'a klist = unit -> [`Nil | `Cons of 'a * 'a klist]
 
-val seq : 'a t -> 'a sequence t
+val seq : 'a t -> 'a Seq.t t
+val iter : 'a t -> 'a iter t
 val gen : 'a t -> 'a gen t
 val klist : 'a t -> 'a klist t

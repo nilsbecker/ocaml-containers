@@ -1,5 +1,7 @@
 (** Generic benchs *)
 
+[@@@warning "-5"]
+
 module B = Benchmark
 let (@>) = B.Tree.(@>)
 let (@>>) = B.Tree.(@>>)
@@ -17,7 +19,27 @@ let repeat = 3
 (* composition *)
 let (%%) f g x = f (g x)
 
+let opaque_ignore x = ignore (Sys.opaque_identity x)
+
 module L = struct
+  let bench_iter ?(time=2) n =
+    let f i = opaque_ignore i in
+    let l = CCList.(1 -- n) in
+    let ral = CCRAL.of_list l in
+    let vec = CCFun_vec.of_list l in
+    let sek = Sek.Persistent.of_array 0 (Array.of_list l) in
+    let iter_list () = List.iter f l
+    and raliter () = CCRAL.iter ~f ral
+    and funvec_iter () = CCFun_vec.iter ~f vec
+    and sek_iter () = Sek.Persistent.iter Sek.forward f sek
+    in
+    B.throughputN time ~repeat
+      [ "List.iter", iter_list, ()
+      ; "CCRAL.iter", raliter, ()
+      ; "CCFun_vec.iter", funvec_iter, ()
+      ; "Sek.Persistent.iter", sek_iter, ()
+      ]
+
   (* MAP *)
 
   let f_ x = x+1
@@ -81,10 +103,21 @@ module L = struct
     let l1 = CCList.(1 -- n) in
     let l2 = CCList.(n+1 -- 2*n) in
     let l3 = CCList.(2*n+1 -- 3*n) in
-    let arg = l1, l2, l3 in
+    let v1 = CCFun_vec.of_list l1 in
+    let v2 = CCFun_vec.of_list l2 in
+    let v3 = CCFun_vec.of_list l3 in
+    let s1 = Sek.Persistent.of_array 0 (Array.of_list l1) in
+    let s2 = Sek.Persistent.of_array 0 (Array.of_list l2) in
+    let s3 = Sek.Persistent.of_array 0 (Array.of_list l3) in
+    let bench_list l1 l2 l3 () = opaque_ignore (List.(append (append l1 l2) l3)) in
+    let bench_cclist l1 l2 l3 () = opaque_ignore (CCList.(append (append l1 l2) l3)) in
+    let bench_funvec l1 l2 l3 () = opaque_ignore (CCFun_vec.(append (append l1 l2) l3)) in
+    let bench_sek l1 l2 l3 () = opaque_ignore (Sek.Persistent.(concat (concat l1 l2) l3)) in
     B.throughputN time ~repeat
-      [ "CCList.append", append_ CCList.append, arg
-      ; "List.append", append_ List.append, arg
+      [ "CCList.append", bench_list l1 l2 l3, ()
+      ; "List.append", bench_cclist l1 l2 l3, ()
+      ; "CCFun_vec.append", bench_funvec v1 v2 v3, ()
+      ; "Sek.concat", bench_sek s1 s2 s3, ()
       ]
 
   (* FLATTEN *)
@@ -114,20 +147,20 @@ module L = struct
     let ral = CCRAL.of_list l in
     let v = CCFun_vec.of_list l in
     let bv = BatVect.of_list l in
-    let cv = Clarity.Vector.of_list l in
     let map = List.fold_left (fun map i -> Int_map.add i i map) Int_map.empty l in
+    let sek = Sek.Persistent.of_array 0 (Array.of_list l) in
     let bench_list l () =
-      for i = 0 to n-1 do Sys.opaque_identity (ignore (List.nth l i)) done
+      for i = 0 to n-1 do opaque_ignore (List.nth l i) done
     and bench_map l () =
-      for i = 0 to n-1 do Sys.opaque_identity (ignore (Int_map.find i l)) done
+      for i = 0 to n-1 do opaque_ignore (Int_map.find i l) done
     and bench_ral l () =
-      for i = 0 to n-1 do Sys.opaque_identity (ignore (CCRAL.get_exn l i)) done
+      for i = 0 to n-1 do opaque_ignore (CCRAL.get_exn l i) done
     and bench_funvec l () =
-      for i = 0 to n-1 do Sys.opaque_identity (ignore (CCFun_vec.get_exn i l)) done
+      for i = 0 to n-1 do opaque_ignore (CCFun_vec.get_exn i l) done
     and bench_batvec l () =
-      for i = 0 to n-1 do Sys.opaque_identity (ignore (BatVect.get l i)) done
-    and bench_clarity_vec l () =
-      for i = 0 to n-1 do Sys.opaque_identity (ignore (Clarity.Vector.get l i)) done
+      for i = 0 to n-1 do opaque_ignore (BatVect.get l i) done
+    and bench_sek l () =
+      for i = 0 to n-1 do opaque_ignore (Sek.Persistent.get l i) done
     in
     B.throughputN time ~repeat
       [ "List.nth", bench_list l, ()
@@ -135,68 +168,106 @@ module L = struct
       ; "RAL.get", bench_ral ral, ()
       ; "funvec.get", bench_funvec v, ()
       ; "batvec.get", bench_batvec bv, ()
-      ; "clarity_vec.get", bench_clarity_vec cv, ()
+      ; "Sek.Persistent.get", bench_sek sek, ()
       ]
 
   let bench_set ?(time=2) n =
     let l = CCList.(0 -- (n - 1)) in
     let ral = CCRAL.of_list l in
-    let v = CCFun_vec.of_list l in
+(*     let v = CCFun_vec.of_list l in *)
     let bv = BatVect.of_list l in
-    let cv = Clarity.Vector.of_list l in
+    let sek = Sek.Persistent.of_array 0 (Array.of_list l) in
     let map = List.fold_left (fun map i -> Int_map.add i i map) Int_map.empty l in
     let bench_map l () =
-      for i = 0 to n-1 do Sys.opaque_identity (ignore (Int_map.add i (-i) l)) done
+      for i = 0 to n-1 do opaque_ignore (Int_map.add i (-i) l) done
     and bench_ral l () =
-      for i = 0 to n-1 do Sys.opaque_identity (ignore (CCRAL.set l i (-i))) done
+      for i = 0 to n-1 do opaque_ignore (CCRAL.set l i (-i)) done
+(*
     and bench_funvec l () =
-      for i = 0 to n-1 do Sys.opaque_identity (ignore ((* TODO *))) done
+      for _i = 0 to n-1 do opaque_ignore ((* TODO *)) done
+*)
     and bench_batvec l () =
-      for i = 0 to n-1 do Sys.opaque_identity (ignore (BatVect.set l i (-i))) done
-    and bench_clarity_vec l () =
-      for i = 0 to n-1 do Sys.opaque_identity (ignore (Clarity.Vector.update l i (-1))) done
+      for i = 0 to n-1 do opaque_ignore (BatVect.set l i (-i)) done
+    and bench_sek l () =
+      for i = 0 to n-1 do opaque_ignore (Sek.Persistent.set l i (-i)) done
     in
     B.throughputN time ~repeat
       [ "Map.add", bench_map map, ()
       ; "RAL.set", bench_ral ral, ()
 (*       ; "funvec.set", bench_funvec v, () *)
       ; "batvec.set", bench_batvec bv, ()
-      ; "clarity_vec.update", bench_clarity_vec cv, ()
+      ; "Sek.Persistent.set", bench_sek sek, ()
       ]
 
   let bench_push ?(time=2) n =
-    let l = ref CCList.empty in
-    let ral = ref CCRAL.empty in
+  (*let ral = ref CCRAL.empty in *)
     let v = ref CCFun_vec.empty in
     let bv = ref BatVect.empty in
-    let cv = ref Clarity.Vector.empty in
     let map = ref Int_map.empty in
+    let sek = ref (Sek.Persistent.create 0) in
     let bench_map l () =
-      for i = 0 to n-1 do Sys.opaque_identity (l := Int_map.add i i !l) done
-    and bench_ral l () =
-      (* Note: Better implementation probably possible *)
-      for i = 0 to n-1 do Sys.opaque_identity (l := CCRAL.append !l (CCRAL.return i)) done
+      for i = 0 to n-1 do l := Int_map.add i i !l done; opaque_ignore l
+  (*
+      and bench_ral l () =
+        (* Note: Better implementation probably possible *)
+        for i = 0 to n-1 do l := CCRAL.append !l (CCRAL.return i) done; opaque_ignore l
+  *)
     and bench_funvec l () =
-      for i = 0 to n-1 do Sys.opaque_identity (l := CCFun_vec.push i !l) done
+      for i = 0 to n-1 do l := CCFun_vec.push i !l done; opaque_ignore l
     and bench_batvec l () =
-      for i = 0 to n-1 do Sys.opaque_identity (l := BatVect.append i !l) done
-    and bench_clarity_vec l () =
-      (* Note: Better implementation probably possible *)
-      for i = 0 to n-1 do Sys.opaque_identity (l := Clarity.Vector.append !l (Clarity.Vector.pure i)) done
+      for i = 0 to n-1 do l := BatVect.append i !l done; opaque_ignore l
+    and bench_sek l () =
+      for i = 0 to n-1 do l := Sek.Persistent.push Sek.front !l i done; opaque_ignore l
     in
     B.throughputN time ~repeat
       [ "Map.add", bench_map map, ()
 (*       ; "RAL.append", bench_ral ral, () *) (* too slow *)
+      ; "Sek.Persistent.push", bench_sek sek, ()
       ; "funvec.push", bench_funvec v, ()
       ; "batvec.append", bench_batvec bv, ()
-      ; "clarity_vec.append", bench_clarity_vec cv, ()
+      ]
+
+  let bench_pop ?(time=2) n =
+    let l = CCList.(0 -- (n - 1)) in
+    let ral = CCRAL.of_list l in
+    let v = CCFun_vec.of_list l in
+    let bv = BatVect.of_list l in
+    let map = List.fold_left (fun map i -> Int_map.add i i map) Int_map.empty l in
+    let sek = Sek.Persistent.of_array 0 (Array.of_list l) in
+    let bench_map l () =
+      let l = ref l in
+      for i = 0 to n-1 do l := Int_map.remove i !l done; opaque_ignore l
+    and bench_ral l () =
+      let l = ref l in
+      for _ = 0 to n-1 do l := CCRAL.tl !l done; opaque_ignore l
+    and bench_funvec l () =
+      let l = ref l in
+      for _ = 0 to n-1 do l := snd (CCFun_vec.pop_exn !l) done; opaque_ignore l
+    and bench_batvec l () =
+      let l = ref l in
+      for _ = 0 to n-1 do l := snd (BatVect.pop !l) done; opaque_ignore l
+    and bench_sek l () =
+      let l = ref l in
+      for _ = 0 to n-1 do l := snd (Sek.Persistent.pop Sek.back !l) done; opaque_ignore l
+    in
+    B.throughputN time ~repeat
+      [ "Map.remove", bench_map map, ()
+      ; "RAL.tl", bench_ral ral, ()
+      ; "funvec.pop", bench_funvec v, ()
+      ; "batvec.pop", bench_batvec bv, ()
+      ; "Sek.Persistent.pop", bench_sek sek, ()
       ]
 
   (* MAIN *)
 
   let () = B.Tree.register (
     "list" @>>>
-      [ "map" @>>
+      [ "iter" @>>
+        B.Tree.concat
+          [ app_int (bench_iter ~time:2) 100
+          ; app_int (bench_iter ~time:2) 10_000
+          ; app_int (bench_iter ~time:4) 100_000 ]
+      ; "map" @>>
         B.Tree.concat
           [ app_int (bench_map ~time:2) 100
           ; app_int (bench_map ~time:2) 10_000
@@ -232,6 +303,11 @@ module L = struct
           [ app_int (bench_push ~time:2) 100
           ; app_int (bench_push ~time:2) 10_000
           ; app_int (bench_push ~time:4) 100_000]
+      ; "pop" @>>
+        B.Tree.concat
+          [ app_int (bench_pop ~time:2) 100
+          ; app_int (bench_pop ~time:2) 10_000
+          ; app_int (bench_pop ~time:4) 100_000]
       ]
     )
 end
@@ -808,40 +884,40 @@ module Tbl = struct
     ()
 end
 
-module Iter = struct
-  (** {2 Sequence/Gen} *)
+module Iter_ = struct
+  (** {2 Iter/Gen} *)
 
   let bench_fold n =
-    let seq () = Sequence.fold (+) 0 Sequence.(0 --n) in
+    let iter () = Iter.fold (+) 0 Iter.(0 --n) in
     let gen () = Gen.fold (+) 0 Gen.(0 -- n) in
-    let klist () = CCKList.fold (+) 0 CCKList.(0 -- n) in
+    let oseq () = OSeq.fold (+) 0 OSeq.(0 -- n) in
     B.throughputN 3 ~repeat
-      [ "sequence.fold", seq, ();
+      [ "iter.fold", iter, ();
         "gen.fold", gen, ();
-        "klist.fold", klist, ();
+        "oseq.fold", oseq, ();
       ]
 
   let bench_flat_map n =
-    let seq () = Sequence.(
+    let iter () = Iter.(
       0 -- n |> flat_map (fun x -> x-- (x+10)) |> fold (+) 0
     )
     and gen () = Gen.(
       0 -- n |> flat_map (fun x -> x-- (x+10)) |> fold (+) 0
     )
-    and klist () = CCKList.(
+    and oseq () = OSeq.(
       0 -- n |> flat_map (fun x -> x-- (x+10)) |> fold (+) 0
     )
     in
     B.throughputN 3 ~repeat
-      [ "sequence.flat_map", seq, ();
+      [ "iter.flat_map", iter, ();
         "gen.flat_map", gen, ();
-        "klist.flat_map", klist, ();
+        "oseq.flat_map", oseq, ();
       ]
 
   let bench_iter n =
-    let seq () =
+    let iter () =
       let i = ref 2 in
-      Sequence.(
+      Iter.(
         1 -- n |> iter (fun x -> i := !i * x)
       )
     and gen () =
@@ -849,16 +925,60 @@ module Iter = struct
       Gen.(
         1 -- n |> iter (fun x -> i := !i * x)
       )
-    and klist () =
+    and oseq () =
       let i = ref 2 in
-      CCKList.(
+      OSeq.(
         1 -- n |> iter (fun x -> i := !i * x)
       )
     in
     B.throughputN 3 ~repeat
-      [ "sequence.iter", seq, ();
+      [ "iter.iter", iter, ();
         "gen.iter", gen, ();
-        "klist.iter", klist, ();
+        "oseq.iter", oseq, ();
+      ]
+
+  let bench_to_array n =
+    let iter () = Iter.to_array (Iter.(1 -- n))
+    and gen () = Gen.to_array (Gen.(1 -- n))
+    and oseq () = OSeq.to_array (OSeq.(1 -- n)) in
+    B.throughputN 3 ~repeat
+      [ "iter.to_array", iter, ();
+        "gen.to_array", gen, ();
+        "oseq.to_array", oseq, ();
+      ]
+
+  let bench_cons n =
+    let gen_cons x xs =
+      let saw_x = ref false in
+      fun () ->
+        if !saw_x then (saw_x := true; Some x)
+        else xs ()
+    in
+    let xs = Array.init n CCFun.id in
+    let iter () = ignore (Array.fold_right Iter.cons xs Iter.empty : int Iter.t) in
+    let gen () = ignore (Array.fold_right gen_cons xs Gen.empty : int Gen.t) in
+    let oseq () = ignore (Array.fold_right OSeq.cons xs OSeq.empty : int OSeq.t) in
+    B.throughputN 3 ~repeat
+      [ "iter.cons", iter, ();
+        "gen.cons", gen, ();
+        "oseq.cons", oseq, ();
+      ]
+
+  let bench_cons_fold n =
+    let gen_cons x xs =
+      let saw_x = ref false in
+      fun () ->
+        if !saw_x then (saw_x := true; Some x)
+        else xs ()
+    in
+    let xs = Array.init n CCFun.id in
+    let iter () = Iter.fold (+) 0 (Array.fold_right Iter.cons xs Iter.empty) in
+    let gen () = Gen.fold (+) 0 (Array.fold_right gen_cons xs Gen.empty) in
+    let oseq () = OSeq.fold (+) 0 (Array.fold_right OSeq.cons xs OSeq.empty) in
+    B.throughputN 3 ~repeat
+      [ "iter.cons_fold", iter, ();
+        "gen.cons_fold", gen, ();
+        "oseq.cons_fold", oseq, ();
       ]
 
   let () = B.Tree.register (
@@ -866,6 +986,9 @@ module Iter = struct
       [ "fold" @>> app_ints bench_fold [100; 1_000; 10_000; 1_000_000]
       ; "flat_map" @>> app_ints bench_flat_map [1_000; 10_000]
       ; "iter" @>> app_ints bench_iter [1_000; 10_000]
+      ; "to_array" @>> app_ints bench_to_array [1_000; 10_000]
+      ; "cons" @>> app_ints bench_cons [1_000; 10_000; 100_000]
+      ; "cons_fold" @>> app_ints bench_cons_fold [1_000; 10_000; 100_000]
       ])
 end
 
@@ -873,7 +996,7 @@ module Deque = struct
   module type DEQUE = sig
     type 'a t
     val create : unit -> 'a t
-    val of_seq : 'a Sequence.t -> 'a t
+    val of_seq : 'a Iter.t -> 'a t
     val iter : ('a -> unit) -> 'a t -> unit
     val push_front : 'a t -> 'a -> unit
     val push_back : 'a t -> 'a -> unit
@@ -930,7 +1053,7 @@ module Deque = struct
     let take_back d =
       match !d with
       | None -> raise Empty
-      | Some first when Pervasives.(==) first first.prev ->
+      | Some first when Stdlib.(==) first first.prev ->
         (* only one element *)
         d := None;
         first.content
@@ -943,7 +1066,7 @@ module Deque = struct
     let take_front d =
       match !d with
       | None -> raise Empty
-      | Some first when Pervasives.(==) first first.prev ->
+      | Some first when Stdlib.(==) first first.prev ->
         (* only one element *)
         d := None;
         first.content
@@ -1000,7 +1123,7 @@ module Deque = struct
   let fqueue = (module FQueue : DEQUE)
 
   let bench_iter n =
-    let seq = Sequence.(1 -- n) in
+    let seq = Iter.(1 -- n) in
     let make (module D : DEQUE) =
       let q = D.of_seq seq in
       fun () ->
@@ -1038,7 +1161,7 @@ module Deque = struct
       ]
 
   let bench_append n =
-    let seq = Sequence.(1 -- n) in
+    let seq = Iter.(1 -- n) in
     let make (module D :DEQUE) =
       let q1 = D.of_seq seq in
       let q2 = D.of_seq seq in
@@ -1051,7 +1174,7 @@ module Deque = struct
       ]
 
   let bench_length n =
-    let seq = Sequence.(1--n) in
+    let seq = Iter.(1--n) in
     let make (module D:DEQUE) =
       let q = D.of_seq seq in
       fun () -> ignore (D.length q)
@@ -1108,14 +1231,14 @@ module Graph = struct
   let dfs_ n () =
     let tbl = CCGraph.mk_table ~eq:CCInt.equal ~hash:CCInt.hash (n+10) in
     CCGraph.Traverse.dfs ~tbl ~graph:div_graph_
-      (Sequence.return n)
-    |> Sequence.fold (fun acc _ -> acc+1) 0
+      (Iter.return n)
+    |> Iter.fold (fun acc _ -> acc+1) 0
 
   let dfs_event n () =
     let tbl = CCGraph.mk_table ~eq:CCInt.equal ~hash:CCInt.hash (n+10) in
     CCGraph.Traverse.Event.dfs ~tbl ~eq:CCInt.equal ~graph:div_graph_
-      (Sequence.return n)
-    |> Sequence.fold
+      (Iter.return n)
+    |> Iter.fold
       (fun acc -> function
         | `Enter _ -> acc+1
         | `Exit _
@@ -1156,7 +1279,7 @@ module Str = struct
     let i = ref start in
     try
       while !i + n <= String.length s do
-        if CCString.is_sub ~sub 0 s !i ~len:n then raise Exit;
+        if CCString.is_sub ~sub 0 s !i ~sub_len:n then raise Exit;
         incr i
       done;
       -1
@@ -1168,7 +1291,7 @@ module Str = struct
     let i = ref (String.length s - n) in
     try
       while !i >= 0 do
-        if CCString.is_sub ~sub 0 s !i ~len:n then raise Exit;
+        if CCString.is_sub ~sub 0 s !i ~sub_len:n then raise Exit;
         decr i
       done;
       ~-1

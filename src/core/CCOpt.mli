@@ -1,4 +1,3 @@
-
 (* This file is free software, part of containers. See file "license" for more details. *)
 
 (** {1 Options} *)
@@ -36,11 +35,16 @@ val return : 'a -> 'a t
 val (>|=) : 'a t -> ('a -> 'b) -> 'b t
 (** Infix version of {!map}. *)
 
-val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
-(** Monadic bind. *)
-
 val flat_map : ('a -> 'b t) -> 'a t -> 'b t
 (** Flip version of {!>>=}. *)
+
+val bind : 'a t -> ('a -> 'b t) -> 'b t
+(** Monadic bind.
+    [bind f o] if [o] is [Some v] then [f v] else [None]
+    @since NEXT_RELEASE *)
+
+val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
+(** Infix version of {!bind}. *)
 
 val map2 : ('a -> 'b -> 'c) -> 'a t -> 'b t -> 'c t
 (** [map2 f o1 o2] maps ['a option] and ['b option] to a ['c option] using [f]. *)
@@ -71,6 +75,10 @@ val get_or : default:'a -> 'a t -> 'a
 (** [get_or ~default o] extracts the value from [o], or
     returns [default] if [o = None].
     @since 0.18 *)
+
+val value : 'a t -> default:'a -> 'a
+(** Similar to the stdlib's [Option.value] and to {!get_or}.
+    @since 2.8 *)
 
 val get_exn : 'a t -> 'a
 (** Open the option, possibly failing if it is [None].
@@ -151,7 +159,16 @@ module Infix : sig
   val (<+>) : 'a t -> 'a t -> 'a t
   (** [a <+> b] is [a] if [a] is [Some _], [b] otherwise. *)
 
+  (** Let operators on OCaml >= 4.08.0, nothing otherwise
+      @since 2.8 *)
+  include CCShimsMkLet_.S with type 'a t_let := 'a option
+
 end
+
+
+(** Let operators on OCaml >= 4.08.0, nothing otherwise
+    @since 2.8 *)
+include CCShimsMkLet_.S with type 'a t_let := 'a option
 
 (** {2 Conversion and IO} *)
 
@@ -160,28 +177,38 @@ val to_list : 'a t -> 'a list
 val of_list : 'a list -> 'a t
 (** Head of list, or [None]. *)
 
-val to_result : 'e -> 'a t -> ('a, 'e) Result.result
+val to_result : 'e -> 'a t -> ('a, 'e) result
 (** @since 1.2 *)
 
-val to_result_lazy : (unit -> 'e) -> 'a t -> ('a, 'e) Result.result
+val to_result_lazy : (unit -> 'e) -> 'a t -> ('a, 'e) result
 (** @since 1.2 *)
 
-val of_result : ('a, _) Result.result -> 'a t
+val of_result : ('a, _) result -> 'a t
 (** @since 1.2 *)
 
-type 'a sequence = ('a -> unit) -> unit
+type 'a iter = ('a -> unit) -> unit
 type 'a gen = unit -> 'a option
 type 'a printer = Format.formatter -> 'a -> unit
 type 'a random_gen = Random.State.t -> 'a
 
 val random : 'a random_gen -> 'a t random_gen
 
-val choice_seq : 'a t sequence -> 'a t
+val choice_iter : 'a t iter -> 'a t
 (** [choice_seq s] is similar to {!choice}, but works on sequences.
     It returns the first [Some x] occurring in [s], or [None] otherwise.
-    @since 0.13 *)
+    @since 3.0 *)
+
+val choice_seq : 'a t Seq.t -> 'a t
+(** @since 3.0 *)
 
 val to_gen : 'a t -> 'a gen
-val to_seq : 'a t -> 'a sequence
+
+val to_std_seq : 'a t -> 'a Seq.t
+(** Same as {!Stdlib.Option.to_seq}
+    @since 2.8 *)
+
+val to_iter : 'a t -> 'a iter
+(** Returns an internal iterator, like in the library [Iter].
+    @since 2.8 *)
 
 val pp : 'a printer -> 'a t printer

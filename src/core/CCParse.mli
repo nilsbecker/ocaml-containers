@@ -48,7 +48,7 @@
 
 *)
 
-type 'a or_error = ('a, string) Result.result
+type 'a or_error = ('a, string) result
 
 type line_num = int
 type col_num = int
@@ -323,3 +323,7 @@ module U : sig
   (** Parse a triple using OCaml whitespace conventions.
       The default is "(a, b, c)". *)
 end
+
+(** Let operators on OCaml >= 4.08.0, nothing otherwise
+    @since 2.8 *)
+include CCShimsMkLet_.S with type 'a t_let := 'a t

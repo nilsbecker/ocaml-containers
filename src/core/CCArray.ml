@@ -1,10 +1,8 @@
-
 (* This file is free software, part of containers. See file "license" for more details. *)
 
 (** {1 Array utils} *)
 
-type 'a sequence = ('a -> unit) -> unit
-type 'a klist = unit -> [`Nil | `Cons of 'a * 'a klist]
+type 'a iter = ('a -> unit) -> unit
 type 'a gen = unit -> 'a option
 type 'a equal = 'a -> 'a -> bool
 type 'a ord = 'a -> 'a -> int
@@ -18,17 +16,12 @@ type 'a printer = Format.formatter -> 'a -> unit
 
 (** {2 Arrays} *)
 
-include Array
-
-type 'a t = 'a array
+include CCShims_
+include CCShimsArray_
 
 let empty = [| |]
 
 let map = Array.map
-
-let map2 f a b =
-  if Array.length a <> Array.length b then invalid_arg "map2";
-  Array.init (Array.length a) (fun i -> f (Array.unsafe_get a i) (Array.unsafe_get b i))
 
 let length = Array.length
 
@@ -148,14 +141,14 @@ let sorted cmp a =
   b
 
 (*$= & ~cmp:(=) ~printer:Q.Print.(array int)
-  [||] (sorted Pervasives.compare [||])
-  [|0;1;2;3;4|] (sorted Pervasives.compare [|3;2;1;4;0|])
+  [||] (sorted Stdlib.compare [||])
+  [|0;1;2;3;4|] (sorted Stdlib.compare [|3;2;1;4;0|])
 *)
 
 (*$Q
   Q.(array int) (fun a -> \
     let b = Array.copy a in \
-    Array.sort Pervasives.compare b; b = sorted Pervasives.compare a)
+    Array.sort Stdlib.compare b; b = sorted Stdlib.compare a)
 *)
 
 let sort_indices cmp a =
@@ -165,8 +158,8 @@ let sort_indices cmp a =
   b
 
 (*$= & ~cmp:(=) ~printer:Q.Print.(array int)
-  [||] (sort_indices Pervasives.compare [||])
-  [|4;2;1;0;3|] (sort_indices Pervasives.compare [|"d";"c";"b";"e";"a"|])
+  [||] (sort_indices Stdlib.compare [||])
+  [|4;2;1;0;3|] (sort_indices Stdlib.compare [|"d";"c";"b";"e";"a"|])
 *)
 
 (*$Q
@@ -179,8 +172,8 @@ let sort_ranking cmp a =
   sort_indices compare (sort_indices cmp a)
 
 (*$= & ~cmp:(=) ~printer:Q.Print.(array int)
-  [||] (sort_ranking Pervasives.compare [||])
-  [|3;2;1;4;0|] (sort_ranking Pervasives.compare [|"d";"c";"b";"e";"a"|])
+  [||] (sort_ranking Stdlib.compare [||])
+  [|3;2;1;4;0|] (sort_ranking Stdlib.compare [|"d";"c";"b";"e";"a"|])
 *)
 
 (*$Q
@@ -205,8 +198,21 @@ let rev a =
   rev [| |] = [| |]
 *)
 
+exception Found
+
+let mem ?(eq = Stdlib.(=)) elt a =
+  try
+    Array.iter (fun e -> if eq e elt then raise_notrace Found) a;
+    false
+  with Found -> true
+
+(*$Q mem
+  Q.(array small_int) (fun a -> \
+  mem 1 a = (Array.mem 1 a))
+*)
+
 let rec find_aux f a i =
-  if i = Array.length a then None
+  if i >= Array.length a then None
   else match f i a.(i) with
     | Some _ as res -> res
     | None -> find_aux f a (i+1)
@@ -269,6 +275,19 @@ let flat_map f a =
   let a = [| 1; 3; 5 |] in \
   let a' = flat_map (fun x -> [| x; x+1 |]) a in \
   a' = [| 1; 2; 3; 4; 5; 6 |]
+*)
+
+let monoid_product f a1 a2 =
+  let na1 = length a1 in
+  init (na1 * length a2)
+    (fun i_prod ->
+       let i = i_prod mod na1 in
+       let j = i_prod / na1 in
+       f a1.(i) a2.(j))
+
+(*$= & ~cmp:(=) ~printer:Q.Print.(array int)
+  [| 11; 12; 21; 22 |] (sorted CCInt.compare @@ monoid_product (+) [| 10; 20 |] [| 1; 2 |])
+  [| 11; 12; 13; 14 |] (sorted CCInt.compare @@ monoid_product (+) [| 10 |] [| 1; 2; 3; 4 |])
 *)
 
 let rec _lookup_rec ~cmp k a i j =
@@ -341,24 +360,6 @@ let bsearch ~cmp k a =
   bsearch ~cmp:CCInt.compare 3 [| |] = `Empty
 *)
 
-let (>>=) a f = flat_map f a
-
-let (>>|) a f = map f a
-
-let (>|=) a f = map f a
-
-let for_all p a =
-  let rec aux i =
-    i = Array.length a || (p a.(i) && aux (i+1))
-  in
-  aux 0
-
-let exists p a =
-  let rec aux i =
-    i <> Array.length a && (p a.(i) || aux (i+1))
-  in
-  aux 0
-
 let rec _for_all2 p a1 a2 i1 i2 ~len =
   len=0 || (p a1.(i1) a2.(i2) && _for_all2 p a1 a2 (i1+1) (i2+1) ~len:(len-1))
 
@@ -373,11 +374,6 @@ let rec _exists2 p a1 a2 i1 i2 ~len =
 let exists2 p a b =
   _exists2 p a b 0 0 ~len:(min (Array.length a) (Array.length b))
 
-let _iter2 f a b i j ~len =
-  for o = 0 to len-1 do
-    f (Array.get a (i+o)) (Array.get b (j+o))
-  done
-
 let _fold2 f acc a b i j ~len =
   let rec aux acc o =
     if o=len then acc
@@ -386,10 +382,6 @@ let _fold2 f acc a b i j ~len =
       aux acc (o+1)
   in
   aux acc 0
-
-let iter2 f a b =
-  if length a <> length b then invalid_arg "iter2";
-  _iter2 f a b 0 0 ~len:(Array.length a)
 
 let fold2 f acc a b =
   if length a <> length b then invalid_arg "fold2";
@@ -543,7 +535,32 @@ let pp_i ?(sep=", ") pp_item out a =
     pp_item k out a.(k)
   done
 
-let to_seq a k = iter k a
+let to_string ?(sep=", ") item_to_string a =
+  Array.to_list a
+  |> List.map item_to_string
+  |> String.concat sep
+
+(*$= to_string & ~printer:(fun s -> s)
+  (to_string string_of_int [|1;2;3;4;5;6|]) "1, 2, 3, 4, 5, 6"
+  (to_string string_of_int [||]) ""
+  (to_string ~sep:" " string_of_int [|1;2;3;4;5;6|]) "1 2 3 4 5 6"
+  (to_string string_of_int [|1|]) "1"
+*)
+
+let to_std_seq a =
+  let rec aux i () =
+    if i>= length a then Seq.Nil
+    else Seq.Cons (a.(i), aux (i+1))
+  in
+  aux 0
+
+(*$=
+  [] (to_std_seq [||] |> CCList.of_std_seq)
+  [1;2;3] (to_std_seq [|1;2;3|] |> CCList.of_std_seq)
+  CCList.(1 -- 1000) (to_std_seq (1--1000) |> CCList.of_std_seq)
+*)
+
+let to_iter a k = iter k a
 
 let to_gen a =
   let k = ref 0 in
@@ -554,8 +571,6 @@ let to_gen a =
       incr k;
       Some x
     ) else None
-
-let to_klist a = _to_klist a 0 (Array.length a)
 
 (** {2 Generic Functions} *)
 
@@ -670,9 +685,11 @@ let sort_generic (type arr)(type elt)
 
 (*$inject
   module IA = struct
+    let get = Array.get
+    let set = Array.set
+    let length = Array.length
     type elt = int
     type t = int array
-    include Array
   end
 
   let gen_arr = Q.Gen.(array_size (1--100) small_int)
@@ -688,4 +705,38 @@ let sort_generic (type arr)(type elt)
     let a1 = Array.copy a and a2 = Array.copy a in \
     Array.sort CCInt.compare a1; sort_generic (module IA) ~cmp:CCInt.compare a2; \
     a1 = a2 )
+*)
+
+
+module Infix = struct
+  let (>>=) a f = flat_map f a
+  let (>>|) a f = map f a
+  let (>|=) a f = map f a
+  let (--) = (--)
+  let (--^) = (--^)
+
+  include CCShimsMkLet_.Make(struct
+      type 'a t = 'a array
+      let (>>=) = (>>=)
+      let (>|=) = (>|=)
+      let monoid_product a1 a2 = monoid_product (fun x y->x,y) a1 a2
+    end)
+end
+
+include Infix
+
+
+(* test consistency of interfaces *)
+(*$inject
+  module FA = CCShimsArray_.Floatarray
+  module type L = module type of CCArray with module Floatarray := FA
+  module type LL = module type of CCArrayLabels with module Floatarray := FA
+*)
+
+(*$R
+  ignore (module CCArrayLabels : L)
+*)
+
+(*$R
+  ignore (module CCArray : LL)
 *)

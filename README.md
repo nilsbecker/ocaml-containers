@@ -1,8 +1,8 @@
-# OCaml-containers 📦
+# OCaml-containers 📦  [![Build Status](https://travis-ci.org/c-cube/ocaml-containers.svg?branch=master)](https://travis-ci.org/c-cube/ocaml-containers)
 
 A modular, clean and powerful extension of the OCaml standard library.
 
-[(Jump to the current API documentation)](https://c-cube.github.io/ocaml-containers/last/)
+[(Jump to the current API documentation)](https://c-cube.github.io/ocaml-containers/)
 
 Containers is an extension of OCaml's standard library (under BSD license)
 focused on data structures, combinators and iterators, without dependencies on
@@ -11,8 +11,6 @@ global namespace. Some modules extend the stdlib (e.g. CCList provides safe
 map/fold_right/append, and additional functions on lists).
 Alternatively, `open Containers` will bring enhanced versions of the standard
 modules into scope.
-
-[![Build Status](https://travis-ci.org/c-cube/ocaml-containers.svg?branch=master)](https://travis-ci.org/c-cube/ocaml-containers)
 
 ## Quick Summary
 
@@ -38,7 +36,7 @@ Containers is:
   including a blocking queue, semaphores, an extension of `Mutex`, and
   thread-pool based futures.
 
-Some of the modules have been moved to their own repository (e.g. `sequence`,
+Some of the modules have been moved to their own repository (e.g. `sequence` (now `iter`),
 `gen`, `qcheck`) and are on opam for great fun and profit.
 
 ## Migration Guide
@@ -53,14 +51,14 @@ Some of the modules have been moved to their own repository (e.g. `sequence`,
 - many optional arguments have become mandatory, because their default value
   would be a polymorphic "magic" operator such as `(=)` or `(>=)`.
   Now these have to be specified explicitly, but during the transition
-  you can use `Pervasives.(=)` and `Pervasives.(>=)` as explicit arguments.
+  you can use `Stdlib.(=)` and `Stdlib.(>=)` as explicit arguments.
 
 - if your code contains `open Containers`, the biggest hurdle you face
   might be that operators have become monomorphic by default.
   We believe this is a useful change that prevents many subtle bugs.
   However, during migration and until you use proper combinators for
   equality (`CCEqual`), comparison (`CCOrd`), and hashing (`CCHash`),
-  you might want to add `open Pervasives` just after the `open Containers`.
+  you might want to add `open Stdlib` just after the `open Containers`.
   See [the section on monomorphic operators](#monomorphic-operators-why-and-how) for more details.
 
 ## Monomorphic operators: why, and how?
@@ -96,9 +94,9 @@ See also:
 ### Sometimes polymorphic operators still make sense!
 
 If you just want to use polymorphic operators, it's fine! You can access them
-easily by using `Pervasives.(=)`, `Pervasives.max`, etc.
+easily by using `Stdlib.(=)`, `Stdlib.max`, etc.
 
-When migrating a module, you can add `open Pervasives` on top of it to restore
+When migrating a module, you can add `open Stdlib` on top of it to restore
 the default behavior. It is, however, recommended to export an `equal` function
 (and `compare`, and `hash`) for all the public types, even if their internal
 definition is just the corresponding polymorphic operator.
@@ -118,27 +116,27 @@ To print values with types defined in `containers` in the bytecode debugger,
 you first have to load the appropriate bytecode archives. After starting a
 session, e.g. `ocamldebug your_program.bc`,
 
-```
-# load_printer containers_monomorphic.cma
-# load_printer containers.cma
+```ocaml non-deterministic=command
+# #load_printer containers_monomorphic.cma
+# #load_printer containers.cma
 ```
 
 For these archives to be found, you may have to `run` the program first. Now
 printing functions that have the appropriate type `Format.formatter -> 'a ->
 unit` can be installed. For example,
 
-```
-# install_printer Containers.Int.pp
+```ocaml non-deterministic=command
+# #install_printer Containers.Int.pp
 ```
 
 However, printer combinators are not easily handled by `ocamldebug`. For
 instance `# install_printer Containers.(List.pp Int.pp)` will *not* work out of
 the box. You can make this work by writing a short module which defines
 ready-made combined printing functions, and loading that in ocamldebug. For
-instance 
+instance
 
 ```ocaml non-deterministic=command
-module M = struct 
+module M = struct
 	let pp_int_list = Containers.(List.pp Int.pp)
 end
 ```
@@ -147,10 +145,9 @@ loaded via `# load_printer m.cmo` and installed as `# install_printer
 M.pp_int_list`.
 
 
-
 ## Change Log
 
-See [this file](./CHANGELOG.adoc).
+See [this file](./CHANGELOG.md).
 
 ## Finding help
 
@@ -175,6 +172,7 @@ In a toplevel, using ocamlfind:
 ```ocaml
 # #use "topfind";;
 # #require "containers";;
+# #require "containers-data";;
 # CCList.flat_map;;
 - : ('a -> 'b list) -> 'a list -> 'b list = <fun>
 # open Containers;;  (* optional *)
@@ -206,7 +204,7 @@ You will need OCaml `>=` 4.02.0.
 
 ### Via opam
 
-The prefered way to install is through [opam](http://opam.ocaml.org/).
+The preferred way to install is through [opam](http://opam.ocaml.org/).
 
 ```
 $ opam install containers
@@ -251,7 +249,7 @@ PRs on github are very welcome (patches by email too, if you prefer so).
 Assuming your are in a clone of the repository:
 
 1. Some dependencies are required, you'll need
-  `opam install benchmark qcheck qtest sequence`. 
+  `opam install benchmark qcheck qtest iter`.
 2. run `make devel` to enable everything (including tests).
 3. make your changes, commit, push, and open a PR.
 4. use `make test` without moderation! It must pass before a PR
@@ -348,27 +346,27 @@ module IntMap = CCMap.Make(CCInt)
 ```
 
 ```ocaml
-# (* conversions using the "sequence" type, fast iterators that are
+# (* conversions using the "iter" type, fast iterators that are
    pervasively used in containers. Combinators can be found
    in the opam library "sequence". *)
   let map : string IntMap.t =
     l2
     |> List.map (fun x -> x, string_of_int x)
-    |> CCList.to_seq
-    |> IntMap.of_seq;;
+    |> CCList.to_iter
+    |> IntMap.of_iter;;
 val map : string IntMap.t = <abstr>
 
-# CCList.to_seq ;; (* check the type *)
-- : 'a list -> 'a CCList.sequence = <fun>
-# IntMap.of_seq ;;
-- : (int * 'a) CCMap.sequence -> 'a IntMap.t = <fun>
+# CCList.to_iter;; (* check the type *)
+- : 'a list -> 'a CCList.iter = <fun>
+# IntMap.of_iter ;;
+- : (int * 'a) CCMap.iter -> 'a IntMap.t = <fun>
 
 # (* we can print, too *)
   Format.printf "@[<2>map =@ @[<hov>%a@]@]@."
     (IntMap.pp CCFormat.int CCFormat.string_quoted)
     map;;
 map =
-  1->"1", 2->"2", 3->"3", 4->"4", 5->"5", 
+  1->"1", 2->"2", 3->"3", 4->"4", 5->"5",
   6->"6", 7->"7", 8->"8", 9->"9"
 - : unit = ()
 
@@ -451,7 +449,7 @@ module IntHeap = CCHeap.Make(struct type t = int let leq = (<=) end);;
 ```
 
 ```ocaml
-# let h = v2 |> CCVector.to_seq |> IntHeap.of_seq ;;
+# let h = v2 |> CCVector.to_iter |> IntHeap.of_iter ;;
 val h : IntHeap.t = <abstr>
 
 # (* We can print the content of h
@@ -513,7 +511,7 @@ NOTE: you should never let the resource escape the
 scope of the `with_resource` call, because it will not be valid outside.
 OCaml's type system doesn't make it easy to forbid that so we rely
 on convention here (it would be possible, but cumbersome, using
-a record with an explicitely quantified function type).
+a record with an explicitly quantified function type).
 
 Now we can read the file again:
 
@@ -544,7 +542,7 @@ paired with a flag distinguishing files from directories.
 There is also a sub-library called `containers.data`, with lots of
 more specialized data-structures.
 The documentation contains the API for all the modules; they also provide
-interface to `sequence` and, as the rest of containers, minimize
+interface to `iter` and, as the rest of containers, minimize
 dependencies over other modules. To use `containers.data` you need to link it,
 either in your build system or by `#require containers.data;;`
 
@@ -581,8 +579,10 @@ Some structural types are used throughout the library:
   are defined in the opam library [gen](https://github.com/c-cube/gen)
 - `sequence`: `'a sequence = (unit -> 'a) -> unit` is also an iterator type.
   It is easier to define on data structures than `gen`, but it a bit less
-  powerful.  The opam library [sequence](https://github.com/c-cube/sequence)
-  can be used to consume and produce values of this type.
+  powerful. The opam library [iter](https://github.com/c-cube/iter)
+  can be used to consume and produce values of this type. It was renamed
+  from `'a sequence` to `'a iter` to distinguish it better from `Core.Sequence`
+  and the standard `seq`.
 - `error`: `'a or_error = ('a, string) result = Error of string | Ok of 'a`
   using the standard `result` type, supported in `CCResult`.
 - `klist`: `'a klist = unit -> [`Nil | `Cons of 'a * 'a klist]` is a lazy list
@@ -607,18 +607,17 @@ See [the extended documentation](doc/containers.md) for more examples.
 Beforehand, check `grep deprecated -r src` to see whether some functions
 can be removed.
 
-- `make test`
+- `make all`
 - update version in `containers.opam`
 - `make update_next_tag` (to update `@since` comments; be careful not to change symlinks)
 - check status of modules (`{b status: foo}`) and update if required;
    removed deprecated functions, etc.
-- update `CHANGELOG.adoc` (see its end to find the right git command)
+- update `CHANGELOG.md` (see its end to find the right git command)
 - commit the changes
 - `make test doc`
-- tag, and push both to github
-- `opam pin add containers https://github.com/c-cube/ocaml-containers.git#<release>`
-- new opam package: `opam publish prepare; opam publish submit`
-- re-generate doc: `make doc push_doc`
+- `export VERSION=<tag here>; git tag -f $VERSION; git push origin :$VERSION; git push origin $VERSION`
+- new opam package: `opam publish https://github.com/c-cube/ocaml-containers/archive/<tag>.tar.gz`
+- re-generate doc: `make doc` and put it into `gh-pages`
 
 ### List Authors
 

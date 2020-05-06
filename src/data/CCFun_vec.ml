@@ -6,7 +6,7 @@
     let g = Q.(small_list (pair small_int small_int)) in
     Q.map_same_type
       (fun l ->
-        CCList.sort_uniq ~cmp:(fun a b -> Pervasives.compare (fst a)(fst b)) l
+        CCList.sort_uniq ~cmp:(fun a b -> Stdlib.compare (fst a)(fst b)) l
       ) g
   ;;
 *)
@@ -24,7 +24,7 @@ type 'a ktree = unit -> [`Nil | `Node of 'a * 'a ktree list]
    type state = { mutable frozen: bool }
    type t = Nil | St of state
    let empty = Nil
-   let equal a b = Pervasives.(==) a b
+   let equal a b = Stdlib.(==) a b
    let create () = St {frozen=false}
    let active = function Nil -> false | St st -> not st.frozen
    let frozen = function Nil -> true | St st -> st.frozen
@@ -226,10 +226,10 @@ let pop_ i (m:'a t) : 'a * 'a t =
     let sub = A.get m.subs x in
     let y, sub' = aux l sub in
     if is_empty sub' then (
-      assert (i+1 = A.length m.subs); (* last one *)
+      assert (x+1 = A.length m.subs); (* last one *)
       y, {m with size=m.size-1; subs=A.pop m.subs}
     ) else (
-      y, {m with size=m.size-1; subs=A.set ~mut:false m.subs x sub}
+      y, {m with size=m.size-1; subs=A.set ~mut:false m.subs x sub'}
     )
   in
   aux (split_idx i) m
@@ -240,6 +240,27 @@ let pop_exn (v:'a t) : 'a * 'a t =
 
 let pop (v:'a t) : ('a * 'a t) option =
   if v.size=0 then None else Some (pop_ (v.size-1) v)
+
+(* regression test for #298 *)
+(*$R
+  let rec consume x = match CCFun_vec.pop x with
+    | None -> () | Some (_, x) -> consume x
+  in
+  consume (of_list (CCList.(1 -- 100)));
+  ()
+*)
+
+(*$QR
+    Q.(pair int (small_list int)) (fun (x,l) ->
+        let q0 = of_list l in
+        let q = push x q0 in
+        assert_equal (length q) (length q0+1);
+        let y, q = pop_exn q in
+        assert_equal x y;
+        assert_equal (to_list q) (to_list q0);
+        true
+      )
+    *)
 
 let iteri ~f (m : 'a t) : unit =
   (* basically, a 32-way BFS traversal.
@@ -324,9 +345,9 @@ let to_seq m yield = iteri ~f:(fun _ v -> yield v) m
 
 (*$Q
   _listuniq (fun l -> \
-    (List.sort Pervasives.compare l) = \
-      (l |> Sequence.of_list |> of_seq |> to_seq |> Sequence.to_list \
-        |> List.sort Pervasives.compare) )
+    (List.sort Stdlib.compare l) = \
+      (l |> Iter.of_list |> of_seq |> to_seq |> Iter.to_list \
+        |> List.sort Stdlib.compare) )
 *)
 
 let rec add_gen m g = match g() with
@@ -355,9 +376,9 @@ let to_gen m =
 
 (*$Q
   _listuniq (fun l -> \
-    (List.sort Pervasives.compare l) = \
+    (List.sort Stdlib.compare l) = \
       (l |> Gen.of_list |> of_gen |> to_gen |> Gen.to_list \
-        |> List.sort Pervasives.compare) )
+        |> List.sort Stdlib.compare) )
 *)
 
 let choose m = to_gen m ()

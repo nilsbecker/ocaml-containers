@@ -5,11 +5,13 @@
 
     We only deal with UTF8 strings as they naturally map to OCaml bytestrings *)
 
+open CCShims_
+
 type uchar = Uchar.t
 type 'a gen = unit -> 'a option
-type 'a sequence = ('a -> unit) -> unit
+type 'a iter = ('a -> unit) -> unit
 
-let equal (a:string) b = Pervasives.(=) a b
+let equal (a:string) b = Stdlib.(=) a b
 let hash : string -> int = Hashtbl.hash
 let pp = Format.pp_print_string
 
@@ -111,7 +113,7 @@ let to_gen ?(idx=0) str : uchar gen =
 
 exception Stop
 
-let to_seq ?(idx=0) s : uchar sequence =
+let to_iter ?(idx=0) s : uchar iter =
   fun yield ->
     let st = Dec.make ~idx s in
     try
@@ -122,7 +124,39 @@ let to_seq ?(idx=0) s : uchar sequence =
       done
     with Stop -> ()
 
-let iter ?idx f s = to_seq ?idx s f
+let to_std_seq ?(idx=0) s : uchar Seq.t =
+  let rec loop st =
+    let r = ref None in
+    fun () ->
+      match !r with
+      | Some c -> c
+      | None ->
+        let c = next_ st ~yield:(fun x -> Seq.Cons (x, loop st))
+            ~stop:(fun () -> Seq.Nil) ()
+        in
+        r := Some c;
+        c
+  in
+  let st = Dec.make ~idx s in
+  loop st
+
+(*$= & ~cmp:(=) ~printer:Q.Print.(list (fun c -> string_of_int@@ Uchar.to_int c))
+  (to_list (of_string_exn "aébõ😀")) (to_std_seq (of_string_exn "aébõ😀") |> CCList.of_std_seq)
+  *)
+
+(* make sure it's persisted correctly *)
+(*$R
+  let s = (of_string_exn "aébõ😀") in
+  let seq = to_std_seq s in
+  let l = to_list s in
+  let testeq seq = assert_equal ~cmp:(=) l (CCList.of_std_seq seq) in
+  testeq seq;
+  testeq seq;
+  testeq seq;
+  *)
+
+
+let iter ?idx f s = to_iter ?idx s f
 
 let fold ?idx f acc s =
   let st = Dec.make ?idx s in
@@ -179,9 +213,14 @@ let of_gen g : t =
   in
   aux ()
 
-let of_seq seq : t =
+let of_std_seq seq : t =
   let buf = Buffer.create 32 in
-  seq (code_to_string buf);
+  Seq.iter (code_to_string buf) seq;
+  Buffer.contents buf
+
+let of_iter i : t =
+  let buf = Buffer.create 32 in
+  i (code_to_string buf);
   Buffer.contents buf
 
 let of_list l : t =
@@ -208,7 +247,7 @@ let flat_map f s : t =
   iter (fun c -> iter (code_to_string buf) (f c)) s;
   Buffer.contents buf
 
-let append = Pervasives.(^)
+let append = Stdlib.(^)
 
 let unsafe_of_string s = s
 
@@ -248,7 +287,7 @@ let of_string s = if is_valid s then Some s else None
   with Exit ->
     false
 
-  let uutf_to_seq s f =
+  let uutf_to_iter s f =
   Uutf.String.fold_utf_8
     (fun () _ -> function
        | `Malformed _ -> f (Uchar.of_int 0xfffd)
@@ -258,7 +297,7 @@ let of_string s = if is_valid s then Some s else None
 
 (*$R
   let s = of_string_exn "このため、" in
-  let s' = to_seq s |> of_seq in
+  let s' = to_iter s |> of_iter in
   assert_equal ~cmp:equal ~printer s s'
 *)
 
@@ -271,7 +310,7 @@ let of_string s = if is_valid s then Some s else None
 (*$QR & ~long_factor:10
   Q.small_string (fun s ->
     Q.assume (CCString.for_all (fun c -> Char.code c < 128) s);
-    s = (of_string_exn s |> to_seq |> of_seq |> to_string)
+    s = (of_string_exn s |> to_iter|> of_iter|> to_string)
   )
 *)
 
@@ -294,7 +333,7 @@ let of_string s = if is_valid s then Some s else None
   Q.string (fun s ->
     Q.assume (is_valid s);
     let s = of_string_exn s in
-    let s2 = s |> to_seq |> of_seq in
+    let s2 = s |> to_iter|> of_iter in
     if s=s2 then true
     else Q.Test.fail_reportf "s=%S, s2=%S" (to_string s)(to_string s2)
   )
@@ -325,8 +364,8 @@ let of_string s = if is_valid s then Some s else None
   Q.small_string (fun s ->
     Q.assume (is_valid s && uutf_is_valid s);
     let pp s = Q.Print.(list pp_uchar) s in
-    let l_uutf = uutf_to_seq s |> Sequence.to_list in
-    let l_co = of_string_exn s |> to_seq |> Sequence.to_list in
+    let l_uutf = uutf_to_iter s |> Iter.to_list in
+    let l_co = of_string_exn s |> to_iter |> Iter.to_list in
     if l_uutf = l_co then true
     else Q.Test.fail_reportf "uutf: '%s', containers: '%s', is_valid %B, uutf_is_valid %B"
       (pp l_uutf) (pp l_co) (is_valid s) (uutf_is_valid s)

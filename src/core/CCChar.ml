@@ -6,19 +6,20 @@
 
 include Char
 
-let equal (a:char) b = Pervasives.(=) a b
-
 let pp_buf = Buffer.add_char
 let pp = Format.pp_print_char
 
 let of_int_exn = Char.chr
-let of_int c = try Some (of_int_exn c) with _ -> None
+let of_int c = try Some (of_int_exn c) with Invalid_argument _ -> None
 let to_int = Char.code
 
-let lowercase_ascii = function
-  | 'A'..'Z' as c -> Char.unsafe_chr (Char.code c + 32)
-  | c -> c
+(*$=
+  (Some 'a') (of_int (to_int 'a'))
+  None (of_int 257)
+*)
 
-let uppercase_ascii = function
-  | 'a'..'z' as c -> Char.unsafe_chr (Char.code c - 32)
-  | c -> c
+let to_string c = String.make 1 c
+
+(*$Q to_string
+  (Q.string_of_size (Q.Gen.return 1)) (fun s -> to_string s.[0] = s)
+*)

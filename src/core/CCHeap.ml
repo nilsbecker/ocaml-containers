@@ -3,7 +3,7 @@
 
 (** {1 Leftist Heaps} *)
 
-type 'a sequence = ('a -> unit) -> unit
+type 'a iter = ('a -> unit) -> unit
 type 'a gen = unit -> 'a option
 type 'a printer = Format.formatter -> 'a -> unit
 type 'a klist = unit -> [`Nil | `Cons of 'a * 'a klist]
@@ -58,7 +58,7 @@ end
 (*$QR & ~count:30
   Q.(list_of_size Gen.(return 1_000) int) (fun l ->
     (* put elements into a heap *)
-    let h = H.of_seq (Sequence.of_list l) in
+    let h = H.of_iter (Iter.of_list l) in
     OUnit.assert_equal 1_000 (H.size h);
     let l' = extract_list h in
     is_sorted l'
@@ -69,10 +69,10 @@ end
 (*$QR & ~count:30
   Q.(list_of_size Gen.(return 1_000) int) (fun l ->
     (* put elements into a heap *)
-    let h = H.of_seq (Sequence.of_list l) in
+    let h = H.of_iter (Iter.of_list l) in
     let h = H.filter (fun x->x mod 2=0) h in
     OUnit.assert_bool "all odd"
-      (H.to_seq h |> Sequence.for_all (fun x -> x mod 2 = 0));
+      (H.to_iter h |> Iter.for_all (fun x -> x mod 2 = 0));
     let l' = extract_list h in
     is_sorted l'
   )
@@ -81,8 +81,8 @@ end
 (*$QR
   Q.(list_of_size Gen.(return 1_000) int) (fun l ->
     (* put elements into a heap *)
-    let h = H.of_seq (Sequence.of_list l) in
-    let l' = H.to_seq_sorted h |> Sequence.to_list in
+    let h = H.of_iter (Iter.of_list l) in
+    let l' = H.to_iter_sorted h |> Iter.to_list in
     is_sorted l'
   )
 *)
@@ -130,14 +130,16 @@ module type S = sig
   val delete_one : (elt -> elt -> bool) -> elt -> t -> t
   (** Delete one occurrence of a value if it exist in the heap.
       [delete_one eq x h], use [eq] to find one [x] in [h] and delete it.
-      If [h] do not contain [x] then it return [h]. *)
+      If [h] do not contain [x] then it return [h].
+      @since 2.0 *)
 
   val delete_all : (elt -> elt -> bool) -> elt -> t -> t
   (** Delete all occurrences of a value in the heap.
       [delete_all eq x h], use [eq] to find all [x] in [h] and delete them.
       If [h] do not contain [x] then it return [h].
       The difference with {!filter} is that [delete_all] stops as soon as
-      it enters a subtree whose root is bigger than the element. *)
+      it enters a subtree whose root is bigger than the element.
+      @since 2.0 *)
 
   val iter : (elt -> unit) -> t -> unit
   (** Iterate on elements. *)
@@ -150,8 +152,8 @@ module type S = sig
 
   (** {2 Conversions}
 
-      The interface of [of_gen], [of_seq], [of_klist]
-      has changed @since 0.16 (the old signatures
+      The interface of [of_gen], [of_iter], [of_klist]
+      has changed since 0.16 (the old signatures
       are now [add_seq], [add_gen], [add_klist]). *)
 
   val to_list : t -> elt list
@@ -167,26 +169,44 @@ module type S = sig
       @since 0.16 *)
 
   val of_list : elt list -> t
-  (** [of_list l] is [add_list empty l]. *)
+  (** [of_list l] is [add_list empty l]. Complexity: [O(n log n)]. *)
 
-  val add_seq : t -> elt sequence -> t
+  val add_iter : t -> elt iter -> t
   (** Like {!add_list}.
-      @since 0.16 *)
+      @since 2.8 *)
 
-  val of_seq : elt sequence -> t
-  (** Build a heap from a given [sequence]. *)
+  val add_std_seq : t -> elt Seq.t -> t
+  (** Like {!add_list}.
+      @since 2.8 *)
 
-  val to_seq : t -> elt sequence
-  (** Return a [sequence] of the elements of the heap. *)
+  val of_iter : elt iter -> t
+  (** Build a heap from a given [iter]. Complexity: [O(n log n)].
+      @since 2.8 *)
 
-  val to_seq_sorted : t -> elt sequence
+  val of_std_seq : elt Seq.t -> t
+  (** Build a heap from a given [Seq.t]. Complexity: [O(n log n)].
+      @since 2.8 *)
+
+  val to_iter : t -> elt iter
+  (** Return a [iter] of the elements of the heap.
+      @since 2.8 *)
+
+  val to_std_seq : t -> elt Seq.t
+  (** Return a [Seq.t] of the elements of the heap.
+      @since 2.8 *)
+
+  val to_iter_sorted : t -> elt iter
   (** Iterate on the elements, in increasing order.
-      @since 1.1 *)
+      @since 2.8 *)
+
+  val to_std_seq_sorted : t -> elt Seq.t
+  (** Iterate on the elements, in increasing order.
+      @since 2.8 *)
 
   val add_klist : t -> elt klist -> t (** @since 0.16 *)
 
   val of_klist : elt klist -> t
-  (** Build a heap from a given [klist]. *)
+  (** Build a heap from a given [klist]. Complexity: [O(n log n)]. *)
 
   val to_klist : t -> elt klist
   (** Return a [klist] of the elements of the heap. *)
@@ -194,7 +214,7 @@ module type S = sig
   val add_gen : t -> elt gen -> t (** @since 0.16 *)
 
   val of_gen : elt gen -> t
-  (** Build a heap from a given [gen]. *)
+  (** Build a heap from a given [gen]. Complexity: [O(n log n)]. *)
 
   val to_gen : t -> elt gen
   (** Return a [gen] of the elements of the heap. *)
@@ -202,9 +222,14 @@ module type S = sig
   val to_tree : t -> elt ktree
   (** Return a [ktree] of the elements of the heap. *)
 
+  val to_string : ?sep:string -> (elt -> string) -> t -> string
+  (**  Print the heap in a string
+       @since 2.7 *)
+
   val pp : ?sep:string -> elt printer -> t printer
-  (** @since 0.16
-      Renamed from {!print} @since 2.0 *)
+  (** Printer.
+      Renamed from {!print} since 2.0
+      @since 0.16 *)
 end
 
 module Make(E : PARTIAL_ORD) : S with type elt = E.t = struct
@@ -336,21 +361,40 @@ module Make(E : PARTIAL_ORD) : S with type elt = E.t = struct
 
   let of_list l = add_list empty l
 
-  let add_seq h seq =
+  let add_iter h i =
     let h = ref h in
-    seq (fun x -> h := insert x !h);
+    i (fun x -> h := insert x !h);
     !h
 
-  let of_seq seq = add_seq empty seq
+  let add_std_seq h seq =
+    let h = ref h in
+    Seq.iter (fun x -> h := insert x !h) seq;
+    !h
 
-  let to_seq h k = iter k h
+  let of_iter i = add_iter empty i
+  let of_std_seq seq = add_std_seq empty seq
 
-  let to_seq_sorted heap =
+  let to_iter h k = iter k h
+
+  let to_std_seq h =
+    (* use an explicit stack [st] *)
+    let rec aux st () =
+      match st with
+      | [] -> Seq.Nil
+      | E :: st' -> aux st' ()
+      | N(_,x,l,r) :: st' -> Seq.Cons (x, aux (l::r::st'))
+    in aux [h]
+
+  let to_iter_sorted heap =
     let rec recurse h k = match take h with
       | None -> ()
       | Some (h',x) -> k x; recurse h' k
     in
     fun k -> recurse heap k
+
+  let rec to_std_seq_sorted h () = match take h with
+    | None -> Seq.Nil
+    | Some (h', x) -> Seq.Cons (x, to_std_seq_sorted h')
 
   let rec add_klist h l = match l() with
     | `Nil -> h
@@ -396,13 +440,29 @@ module Make(E : PARTIAL_ORD) : S with type elt = E.t = struct
         extract_list (H.of_gen (CCList.to_gen l)))
     Q.(list int) (fun l -> \
       let h = H.of_list l in \
-      (H.to_gen h |> CCList.of_gen |> List.sort Pervasives.compare) \
-        = (H.to_list h |> List.sort Pervasives.compare))
+      (H.to_gen h |> CCList.of_gen |> List.sort Stdlib.compare) \
+        = (H.to_list h |> List.sort Stdlib.compare))
   *)
 
   let rec to_tree h () = match h with
     | E -> `Nil
     | N (_, x, l, r) -> `Node(x, [to_tree l; to_tree r])
+
+  let to_string ?(sep=",") elt_to_string h =
+    to_list_sorted h
+    |> List.map elt_to_string
+    |> String.concat sep
+
+  (*$Q
+    Q.(list int) (fun l -> \
+      let h = H.of_list l in \
+      (H.to_string string_of_int h) \
+        = (List.sort Stdlib.compare l |> List.map string_of_int |> String.concat ","))
+    Q.(list int) (fun l -> \
+      let h = H.of_list l in \
+      (H.to_string ~sep:" " string_of_int h) \
+        = (List.sort Stdlib.compare l |> List.map string_of_int |> String.concat " "))
+  *)
 
   let pp ?(sep=",") pp_elt out h =
     let first=ref true in

@@ -1,8 +1,10 @@
 {
+  open CCShims_
   type token =
     | ATOM of string
     | LIST_OPEN
     | LIST_CLOSE
+    | SEXP_COMMENT
     | EOI
 
   (* location + message *)
@@ -20,7 +22,7 @@
     | Escaped_int_1 of int
     | Escaped_int_2 of int
 
-  let char_equal (a : char) b = Pervasives.(=) a b
+  let char_equal (a : char) b = Stdlib.(=) a b
 
   (* remove quotes + unescape *)
   let remove_quotes lexbuf s =
@@ -64,6 +66,7 @@ let string_item =
 let string = '"' string_item* '"'
 
 rule token = parse
+  | "#;" { SEXP_COMMENT }
   | comment_line { token lexbuf }
   | newline { Lexing.new_line lexbuf; token lexbuf }
   | white { token lexbuf }

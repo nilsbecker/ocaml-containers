@@ -3,6 +3,7 @@
 
 (** {1 Random Generators} *)
 
+open CCShims_
 include Random
 
 type state = Random.State.t
@@ -92,10 +93,6 @@ let sample_without_duplicates (type elt) ~cmp k (rng:elt t) st=
   if k<=0 then invalid_arg "sample_without_duplicates";
   aux S.empty k
 
-(* deprecated *)
-let sample_without_replacement ~compare k rng =
-  sample_without_duplicates ~cmp:compare k rng
-
 let list_seq l st = List.map (fun f -> f st) l
 
 let split i st =
@@ -122,7 +119,7 @@ let _diff_list ~last l =
 let split_list i ~len st =
   if len <= 1 then invalid_arg "Random.split_list";
   if i >= len then (
-    let xs = sample_without_replacement ~compare (len-1) (int_range 1 (i-1)) st in
+    let xs = sample_without_duplicates ~cmp:compare (len-1) (int_range 1 (i-1)) st in
     _diff_list ~last:i (0::xs)
   ) else
     None
@@ -200,6 +197,13 @@ let pure x _st = x
 
 let (<*>) f g st = f st (g st)
 
+include CCShimsMkLet_.Make(struct
+    type nonrec 'a t = 'a t
+    let (>>=) = (>>=)
+    let (>|=) = (>|=)
+    let monoid_product a1 a2 st = a1 st, a2 st
+  end)
+
 let __default_state = Random.State.make_self_init ()
 
 let run ?(st=__default_state) g = g st
@@ -225,7 +229,7 @@ let uniformity_test ?(size_hint=10) k rng st =
   let confidence = 4. in
   let std = confidence *. (sqrt (kf *. variance)) in
   let predicate _key n acc =
-    let (<) (a : float) b = Pervasives.(<) a b in
+    let (<) (a : float) b = Stdlib.(<) a b in
     acc && abs_float (average -. float_of_int n) < std in
   Hashtbl.fold predicate histogram true
 

@@ -59,15 +59,6 @@ val replicate : int -> 'a t -> 'a list t
 (** [replicate n g] makes a list of [n] elements which are all generated
     randomly using [g]. *)
 
-val sample_without_replacement:
-  compare:('a -> 'a -> int) -> int -> 'a t -> 'a list t
-(** [sample_without_replacement n g] makes a list of [n] elements which are all
-    generated randomly using [g] with the added constraint that none of the generated
-    random values are equal.
-    @deprecated use sample_without_duplicates instead
-    @raise Invalid_argument if [n <= 0].
-    @since 0.15 *)
-
 val sample_without_duplicates:
   cmp:('a -> 'a -> int) -> int -> 'a t -> 'a list t
 (** [sample_without_replacement n g] makes a list of [n] elements which are all
@@ -157,6 +148,10 @@ val fix :
 val pure : 'a -> 'a t
 
 val (<*>) : ('a -> 'b) t -> 'a t -> 'b t
+
+(** Let operators on OCaml >= 4.08.0, nothing otherwise
+    @since 2.8 *)
+include CCShimsMkLet_.S with type 'a t_let := 'a t
 
 (** {4 Run a generator} *)
 

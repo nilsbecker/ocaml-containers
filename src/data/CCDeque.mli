@@ -1,4 +1,3 @@
-
 (* This file is free software, part of containers. See file "license" for more details. *)
 
 (** {1 Imperative deque}
@@ -46,17 +45,52 @@ val peek_front : 'a t -> 'a
 (** First value.
     @raise Empty if empty. *)
 
+val peek_front_opt : 'a t -> 'a option
+(** First value.
+    @since 2.7 *)
+
 val peek_back : 'a t -> 'a
 (** Last value.
     @raise Empty if empty. *)
+
+val peek_back_opt : 'a t -> 'a option
+(** Last value.
+    @since 2.7 *)
+
+val remove_back : 'a t -> unit
+(** Remove last value. If the deque is empty do nothing
+    @since 2.7 *)
+
+val remove_front : 'a t -> unit
+(** Remove first value. If the deque is empty do nothing
+    @since 2.7 *)
 
 val take_back : 'a t -> 'a
 (** Take last value.
     @raise Empty if empty. *)
 
+val take_back_opt : 'a t -> 'a option
+(** Take last value.
+    @since 2.7 *)
+
 val take_front : 'a t -> 'a
 (** Take first value.
     @raise Empty if empty. *)
+
+val take_front_opt : 'a t -> 'a option
+(** Take first value.
+    @since 2.7 *)
+
+val update_back : 'a t -> ('a -> 'a option) -> unit
+(** Update last value. If the deque is empty do nothing.
+    If the function returns [None], remove last element;
+    if it returns [Some x], replace last element with [x].
+    @since 2.7 *)
+
+val update_front : 'a t -> ('a -> 'a option) -> unit
+(** Update first value. If the deque is empty do nothing.
+    Similar to {!update_back} but for the first value.
+    @since 2.7 *)
 
 val append_front : into:'a t -> 'a t -> unit
 (** [append_front ~into q] adds all elements of [q] at the front
@@ -123,6 +157,18 @@ val to_list : 'a t -> 'a list
 val to_rev_list : 'a t -> 'a list
 (** Efficient conversion to list, in reverse order.
     @since 0.13 *)
+
+val filter : ('a -> bool) -> 'a t -> 'a t
+(** Filter into a new copy.
+    @since 2.7 *)
+
+val filter_map : ('a -> 'b option) -> 'a t -> 'b t
+(** Filter map into a new copy
+    @since 2.7 *)
+
+val filter_in_place : 'a t -> ('a -> bool) -> unit
+(** Keep only elements that satisfy the predicate.
+    @since 2.7 *)
 
 (** {2 print} *)
 

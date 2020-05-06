@@ -5,7 +5,10 @@
 
     @since 0.4 *)
 
-type 'a sequence = ('a -> unit) -> unit
+type 'a iter = ('a -> unit) -> unit
+(** Fast internal iterator.
+    @since 2.8 *)
+
 type 'a eq = 'a -> 'a -> bool
 type 'a hash = 'a -> int
 type 'a printer = Format.formatter -> 'a -> unit
@@ -16,30 +19,32 @@ type 'a printer = Format.formatter -> 'a -> unit
 
 module Poly : sig
   val get : ('a,'b) Hashtbl.t -> 'a -> 'b option
-  (** Safe version of {!Hashtbl.find}. *)
+  (** [get tbl k] finds a binding for the key [k] if present,
+      or returns [None] if no value is found.
+      Safe version of {!Hashtbl.find}. *)
 
   val get_or : ('a,'b) Hashtbl.t -> 'a -> default:'b -> 'b
   (** [get_or tbl k ~default] returns the value associated to [k] if present,
       and returns [default] otherwise (if [k] doesn't belong in [tbl]).
       @since 0.16 *)
 
-  val keys : ('a,'b) Hashtbl.t -> 'a sequence
-  (** Iterate on keys (similar order as {!Hashtbl.iter}). *)
+  val keys : ('a,'b) Hashtbl.t -> 'a iter
+  (** [keys tbl f] iterates on keys (similar order as {!Hashtbl.iter}). *)
 
-  val values : ('a,'b) Hashtbl.t -> 'b sequence
-  (** Iterate on values in the table. *)
+  val values : ('a,'b) Hashtbl.t -> 'b iter
+  (** [values tbl f] iterates on values in the table [tbl]. *)
 
   val keys_list : ('a, 'b) Hashtbl.t -> 'a list
-  (** [keys_list t] is the list of keys in [t].
+  (** [keys_list tbl] is the list of keys in [tbl].
       If the key is in the Hashtable multiple times, all occurrences will be returned.
       @since 0.8 *)
 
   val values_list : ('a, 'b) Hashtbl.t -> 'b list
-  (** [values_list t] is the list of values in [t].
+  (** [values_list tbl] is the list of values in [tbl].
       @since 0.8 *)
 
   val map_list : ('a -> 'b -> 'c) -> ('a, 'b) Hashtbl.t -> 'c list
-  (** Map on a hashtable's items, collect into a list. *)
+  (** [map_list f tbl] maps on a [tbl]'s items. Collect into a list. *)
 
   val incr : ?by:int -> ('a, int) Hashtbl.t -> 'a -> unit
   (** [incr ?by tbl x] increments or initializes the counter associated with [x].
@@ -49,41 +54,61 @@ module Poly : sig
       @since 0.16 *)
 
   val decr : ?by:int -> ('a, int) Hashtbl.t -> 'a -> unit
-  (** Like {!incr} but subtract 1 (or the value of [by]).
+  (** [decr ?by tbl x] is like {!incr} but subtract 1 (or the value of [by]).
       If the value reaches 0, the key is removed from the table.
       This does nothing if the key is not already present in the table.
       @since 0.16 *)
 
-  val to_seq : ('a,'b) Hashtbl.t -> ('a * 'b) sequence
-  (** Iterate on bindings in the table. *)
+  val to_iter : ('a,'b) Hashtbl.t -> ('a * 'b) iter
+  (** Iterate on bindings in the table.
+      @since 2.8 *)
 
   val add_list : ('a, 'b list) Hashtbl.t -> 'a -> 'b -> unit
   (** [add_list tbl x y] adds [y] to the list [x] is bound to. If [x] is
       not bound, it becomes bound to [y].
       @since 0.16 *)
 
-  val add_seq : ('a,'b) Hashtbl.t -> ('a * 'b) sequence -> unit
+  val add_iter : ('a,'b) Hashtbl.t -> ('a * 'b) iter -> unit
   (** Add the corresponding pairs to the table, using {!Hashtbl.add}.
-      @since 0.16 *)
+      @since 2.8 *)
 
-  val of_seq : ('a * 'b) sequence -> ('a,'b) Hashtbl.t
-  (** From the given bindings, added in order. *)
+  val add_std_seq : ('a,'b) Hashtbl.t -> ('a * 'b) Seq.t -> unit
+  (** Add the corresponding pairs to the table, using {!Hashtbl.add}.
+      @since 2.8 *)
 
-  val add_seq_count : ('a, int) Hashtbl.t -> 'a sequence -> unit
+  val of_iter : ('a * 'b) iter -> ('a,'b) Hashtbl.t
+  (** From the given bindings, added in order.
+      @since 2.8 *)
+
+  val of_std_seq : ('a * 'b) Seq.t -> ('a,'b) Hashtbl.t
+  (** From the given bindings, added in order.
+      @since 2.8 *)
+
+  val add_iter_count : ('a, int) Hashtbl.t -> 'a iter -> unit
+  (** [add_iter_count tbl i] increments the count of each element of [i]
+      by calling {!incr}. This is useful for counting how many times each
+      element of [i] occurs.
+      @since 2.8 *)
+
+  val add_std_seq_count : ('a, int) Hashtbl.t -> 'a Seq.t -> unit
   (** [add_seq_count tbl seq] increments the count of each element of [seq]
       by calling {!incr}. This is useful for counting how many times each
       element of [seq] occurs.
-      @since 0.16 *)
+      @since 2.8 *)
 
-  val of_seq_count : 'a sequence -> ('a, int) Hashtbl.t
+  val of_iter_count : 'a iter -> ('a, int) Hashtbl.t
   (** Like {!add_seq_count}, but allocates a new table and returns it.
-      @since 0.16 *)
+      @since 2.8 *)
+
+  val of_std_seq_count : 'a Seq.t -> ('a, int) Hashtbl.t
+  (** Like {!add_seq_count}, but allocates a new table and returns it.
+      @since 2.8 *)
 
   val to_list : ('a,'b) Hashtbl.t -> ('a * 'b) list
-  (** List of bindings (order unspecified). *)
+  (** [to_list tbl] returns the list of (key,value) bindings (order unspecified). *)
 
   val of_list : ('a * 'b) list -> ('a,'b) Hashtbl.t
-  (** Build a table from the given list of bindings [k_i -> v_i],
+  (** [of_list l] builds a table from the given list [l] of bindings [k_i -> v_i],
       added in order using {!add}. If a key occurs several times,
       it will be added several times, and the visible binding
       will be the last one. *)
@@ -104,7 +129,8 @@ module Poly : sig
       @since 1.0 *)
 
   val pp : 'a printer -> 'b printer -> ('a, 'b) Hashtbl.t printer
-  (** Printer for table.
+  (** [pp pp_k pp_v] returns a table printer given a [pp_k] printer
+      for individual key and a [pp_v] printer for individual value.
       Renamed from [print] since 2.0.
       @since 0.13 *)
 end
@@ -117,7 +143,9 @@ module type S = sig
   include Hashtbl.S
 
   val get : 'a t -> key -> 'a option
-  (** Safe version of {!Hashtbl.find}. *)
+  (** [get tbl k] finds a binding for the key [k] if present,
+      or returns [None] if no value is found.
+      Safe version of {!Hashtbl.find}. *)
 
   val get_or : 'a t -> key -> default:'a -> 'a
   (** [get_or tbl k ~default] returns the value associated to [k] if present,
@@ -137,19 +165,19 @@ module type S = sig
       @since 0.16 *)
 
   val decr : ?by:int -> int t -> key -> unit
-  (** Like {!incr} but subtract 1 (or the value of [by]).
+  (** [decr ?by tbl x] is like {!incr} but subtract 1 (or the value of [by]).
       If the value reaches 0, the key is removed from the table.
       This does nothing if the key is not already present in the table.
       @since 0.16 *)
 
-  val keys : 'a t -> key sequence
-  (** Iterate on keys (similar order as {!Hashtbl.iter}). *)
+  val keys : 'a t -> key iter
+  (**  [keys tbl f] iterates on keys (similar order as {!Hashtbl.iter}). *)
 
-  val values : 'a t -> 'a sequence
-  (** Iterate on values in the table. *)
+  val values : 'a t -> 'a iter
+  (**  [values tbl f] iterates on values in the table. *)
 
   val keys_list : _ t -> key list
-  (** [keys_list t] is the list of keys in [t].
+  (** [keys_list tbl] is the list of keys in [tbl].
       If the key is in the Hashtable multiple times, all occurrences will be returned.
       @since 0.8 *)
 
@@ -160,31 +188,51 @@ module type S = sig
   val map_list : (key -> 'a -> 'b) -> 'a t -> 'b list
   (** Map on a hashtable's items, collect into a list. *)
 
-  val to_seq : 'a t -> (key * 'a) sequence
-  (** Iterate on values in the table. *)
+  val to_iter : 'a t -> (key * 'a) iter
+  (** Iterate on bindings in the table.
+      @since 2.8 *)
 
-  val of_seq : (key * 'a) sequence -> 'a t
-  (** From the given bindings, added in order. *)
-
-  val add_seq : 'a t -> (key * 'a) sequence -> unit
+  val add_iter : 'a t -> (key * 'a) iter -> unit
   (** Add the corresponding pairs to the table, using {!Hashtbl.add}.
-      @since 0.16 *)
+      @since 2.8 *)
 
-  val add_seq_count : int t -> key sequence -> unit
+  val add_std_seq : 'a t -> (key * 'a) Seq.t -> unit
+  (** Add the corresponding pairs to the table, using {!Hashtbl.add}.
+      @since 2.8 *)
+
+  val of_iter : (key * 'a) iter -> 'a t
+  (** From the given bindings, added in order.
+      @since 2.8 *)
+
+  val of_std_seq : (key * 'a) Seq.t -> 'a t
+  (** From the given bindings, added in order.
+      @since 2.8 *)
+
+  val add_iter_count : int t -> key iter -> unit
+  (** [add_iter_count tbl i] increments the count of each element of [i]
+      by calling {!incr}. This is useful for counting how many times each
+      element of [i] occurs.
+      @since 2.8 *)
+
+  val add_std_seq_count : int t -> key Seq.t -> unit
   (** [add_seq_count tbl seq] increments the count of each element of [seq]
       by calling {!incr}. This is useful for counting how many times each
       element of [seq] occurs.
-      @since 0.16 *)
+      @since 2.8 *)
 
-  val of_seq_count : key sequence -> int t
+  val of_iter_count : key iter -> int t
   (** Like {!add_seq_count}, but allocates a new table and returns it.
-      @since 0.16 *)
+      @since 2.8 *)
+
+  val of_std_seq_count : key Seq.t -> int t
+  (** Like {!add_seq_count}, but allocates a new table and returns it.
+      @since 2.8 *)
 
   val to_list : 'a t -> (key * 'a) list
-  (** List of bindings (order unspecified). *)
+  (** [to_list tbl] returns the list of (key,value) bindings (order unspecified). *)
 
   val of_list : (key * 'a) list -> 'a t
-  (** Build a table from the given list of bindings [k_i -> v_i],
+  (** [of_list l] builds a table from the given list [l] of bindings [k_i -> v_i],
       added in order using {!add}. If a key occurs several times,
       it will be added several times, and the visible binding
       will be the last one. *)
@@ -205,7 +253,8 @@ module type S = sig
       @since 1.0 *)
 
   val pp : key printer -> 'a printer -> 'a t printer
-  (** Printer for tables.
+  (** [pp pp_k pp_v] returns a table printer given a [pp_k] printer
+      for individual key and a [pp_v] printer for individual value. 
       Renamed from [print] since 2.0.
       @since 0.13 *)
 end

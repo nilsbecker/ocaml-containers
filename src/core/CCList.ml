@@ -3,11 +3,11 @@
 
 (** {1 Complements to list} *)
 
-(*$inject
-  let lsort l = List.sort Pervasives.compare l
-*)
+open CCShims_
 
-type 'a t = 'a list
+(*$inject
+  let lsort l = List.sort Stdlib.compare l
+*)
 
 (* backport new functions from stdlib here *)
 
@@ -56,17 +56,17 @@ let rec compare_length_with l n = match l, n with
 
 let rec assoc_opt x = function
   | [] -> None
-  | (y,v) :: _ when Pervasives.(=) x y -> Some v
+  | (y,v) :: _ when Stdlib.(=) x y -> Some v
   | _ :: tail -> assoc_opt x tail
 
 let rec assq_opt x = function
   | [] -> None
-  | (y,v) :: _ when Pervasives.(==) x y -> Some v
+  | (y,v) :: _ when Stdlib.(==) x y -> Some v
   | _ :: tail -> assq_opt x tail
 
 (* end of backport *)
 
-include List
+include CCShimsList_
 
 let empty = []
 
@@ -123,11 +123,7 @@ let map f l =
     List.rev (List.rev_map f l) = map f l)
 *)
 
-let (>|=) l f = map f l
-
 let direct_depth_append_ = 10_000
-
-let cons x l = x::l
 
 let append l1 l2 =
   let rec direct i l1 l2 = match l1 with
@@ -235,6 +231,28 @@ let fold_map f acc l =
     fold_map (fun acc x -> x::acc, x) [] l = (List.rev l, l))
 *)
 
+let fold_map_i f acc l =
+  let rec aux f acc i map_acc l = match l with
+    | [] -> acc, List.rev map_acc
+    | x :: l' ->
+      let acc, y = f acc i x in
+      aux f acc (i+1) (y :: map_acc) l'
+  in
+  aux f acc 0 [] l
+
+let fold_on_map ~f ~reduce acc l =
+  let rec aux acc l = match l with
+    | [] -> acc
+    | x :: l' ->
+      let acc = reduce acc (f x) in
+      aux acc l'
+  in
+  aux acc l
+
+(*$=
+  6 (fold_on_map ~f:int_of_string ~reduce:(+) 0 ["1";"2";"3"])
+*)
+
 let scan_left f acc l =
   let rec aux f acc l_acc l = match l with
     | [] -> List.rev l_acc
@@ -292,6 +310,15 @@ let fold_filter_map f acc l =
     0 (1--10))
 *)
 
+let fold_filter_map_i f acc l =
+  let rec aux f acc i map_acc l = match l with
+    | [] -> acc, List.rev map_acc
+    | x :: l' ->
+      let acc, y = f acc i x in
+      aux f acc (i+1) (cons_maybe y map_acc) l'
+  in
+  aux f acc 0 [] l
+
 let fold_flat_map f acc l =
   let rec aux f acc map_acc l = match l with
     | [] -> acc, List.rev map_acc
@@ -307,6 +334,15 @@ let fold_flat_map f acc l =
       fold_flat_map (fun acc x->acc+x, [pf "%d" x; pf "a%d" x]) 0 [1;2;3])
 *)
 
+let fold_flat_map_i f acc l =
+  let rec aux f acc i map_acc l = match l with
+    | [] -> acc, List.rev map_acc
+    | x :: l' ->
+      let acc, y = f acc i x in
+      aux f acc (i+1) (List.rev_append y map_acc) l'
+  in
+  aux f acc 0 [] l
+
 (*$Q
   Q.(list int) (fun l -> \
     fold_flat_map (fun acc x -> x::acc, [x;x+10]) [] l = \
@@ -314,18 +350,42 @@ let fold_flat_map f acc l =
 *)
 
 let init len f =
-  let rec init_rec acc i f =
-    if i=0 then f i :: acc
-    else init_rec (f i :: acc) (i-1) f
+  let rec indirect_ i acc =
+    if i=len then List.rev acc
+    else (
+      let x = f i in
+      indirect_ (i+1) (x::acc)
+    )
+  in
+  let rec direct_ i =
+    if i = len then []
+    else if i < direct_depth_default_ then (
+      let x = f i in
+      x :: direct_ (i+1)
+    ) else (
+      indirect_ i []
+    )
   in
   if len<0 then invalid_arg "init"
   else if len=0 then []
-  else init_rec [] (len-1) f
+  else direct_ 0
 
 (*$T
   init 0 (fun _ -> 0) = []
   init 1 (fun x->x) = [0]
   init 1000 (fun x->x) = 0--999
+*)
+
+(* see: #256 *)
+(*$R
+  let r = ref [] in
+  ignore (CCList.init 5 (fun x -> r := x :: !r; ()));
+  assert_equal ~printer:Q.Print.(list int) (List.rev !r) [0;1;2;3;4]
+*)
+(*$R
+  let r = ref [] in
+  ignore (CCList.init 200_000 (fun x -> r := x :: !r; ()));
+  assert_equal ~printer:Q.Print.(list int) (List.rev !r) (0--(200_000-1))
 *)
 
 let rec compare f l1 l2 = match l1, l2 with
@@ -363,6 +423,25 @@ let flat_map f l =
 (*$T
   flat_map (fun x -> [x+1; x*2]) [10;100] = [11;20;101;200]
   List.length (flat_map (fun x->[x]) (1--300_000)) = 300_000
+*)
+
+let flat_map_i f l =
+  let rec aux f i l kont = match l with
+    | [] -> kont []
+    | x::l' ->
+      let y = f i x in
+      let kont' tail = match y with
+        | [] -> kont tail
+        | [x] -> kont (x :: tail)
+        | [x;y] -> kont (x::y::tail)
+        | l -> kont (append l tail)
+      in
+      aux f (i+1) l' kont'
+  in
+  aux f 0 l (fun l->l)
+
+(*$=
+  [1;2;2;3;3;3] (flat_map_i (fun i x->replicate (i+1) x) [1;2;3])
 *)
 
 let flatten l = fold_right append l []
@@ -419,7 +498,7 @@ let diagonal l =
   diagonal [] = []
   diagonal [1] = []
   diagonal [1;2] = [1,2]
-  diagonal [1;2;3] |> List.sort Pervasives.compare = [1, 2; 1, 3; 2, 3]
+  diagonal [1;2;3] |> List.sort Stdlib.compare = [1, 2; 1, 3; 2, 3]
 *)
 
 let partition_map f l =
@@ -524,10 +603,6 @@ let split l =
 
 let return x = [x]
 
-let (>>=) l f = flat_map f l
-
-let (<$>) = map
-
 let pure = return
 
 let (<*>) funs l = product (fun f x -> f x) funs l
@@ -610,7 +685,7 @@ let is_sorted ~cmp l =
 
 (*$Q
   Q.(list small_int) (fun l -> \
-    is_sorted ~cmp:CCInt.compare (List.sort Pervasives.compare l))
+    is_sorted ~cmp:CCInt.compare (List.sort Stdlib.compare l))
 *)
 
 let sorted_insert ~cmp ?(uniq=false) x l =
@@ -628,20 +703,20 @@ let sorted_insert ~cmp ?(uniq=false) x l =
 
 (*$Q
     Q.(pair small_int (list small_int)) (fun (x,l) -> \
-      let l = List.sort Pervasives.compare l in \
+      let l = List.sort Stdlib.compare l in \
       is_sorted ~cmp:CCInt.compare (sorted_insert ~cmp:CCInt.compare x l))
     Q.(pair small_int (list small_int)) (fun (x,l) -> \
-      let l = List.sort Pervasives.compare l in \
+      let l = List.sort Stdlib.compare l in \
       is_sorted ~cmp:CCInt.compare (sorted_insert ~cmp:CCInt.compare ~uniq:true x l))
     Q.(pair small_int (list small_int)) (fun (x,l) -> \
-      let l = List.sort Pervasives.compare l in \
+      let l = List.sort Stdlib.compare l in \
       is_sorted ~cmp:CCInt.compare (sorted_insert ~cmp:CCInt.compare ~uniq:false x l))
     Q.(pair small_int (list small_int)) (fun (x,l) -> \
-      let l = List.sort Pervasives.compare l in \
+      let l = List.sort Stdlib.compare l in \
       let l' = sorted_insert ~cmp:CCInt.compare ~uniq:false x l in \
       List.length l' = List.length l + 1)
     Q.(pair small_int (list small_int)) (fun (x,l) -> \
-      let l = List.sort Pervasives.compare l in \
+      let l = List.sort Stdlib.compare l in \
       List.mem x (sorted_insert ~cmp:CCInt.compare x l))
 *)
 
@@ -702,14 +777,14 @@ let sorted_merge_uniq ~cmp l1 l2 =
 
 (*$Q
   Q.(list int) (fun l -> \
-    let l = List.sort Pervasives.compare l in \
+    let l = List.sort Stdlib.compare l in \
     sorted_merge_uniq ~cmp:CCInt.compare l [] = uniq_succ ~eq:CCInt.equal l)
   Q.(list int) (fun l -> \
-    let l = List.sort Pervasives.compare l in \
+    let l = List.sort Stdlib.compare l in \
     sorted_merge_uniq ~cmp:CCInt.compare [] l = uniq_succ ~eq:CCInt.equal l)
   Q.(pair (list int) (list int)) (fun (l1, l2) -> \
-    let l1 = List.sort Pervasives.compare l1 \
-    and l2 = List.sort Pervasives.compare l2 in \
+    let l1 = List.sort Stdlib.compare l1 \
+    and l2 = List.sort Stdlib.compare l2 in \
     let l3 = sorted_merge_uniq ~cmp:CCInt.compare l1 l2 in \
     uniq_succ ~eq:CCInt.equal l3 = l3)
 *)
@@ -1003,8 +1078,8 @@ let keep_some l = filter_map (fun x->x) l
 let keep_ok l =
   filter_map
     (function
-      | Result.Ok x -> Some x
-      | Result.Error _ -> None)
+      | Ok x -> Some x
+      | Error _ -> None)
     l
 
 let all_some l =
@@ -1020,17 +1095,17 @@ let all_some l =
 let all_ok l =
   let err = ref None in
   try
-    Result.Ok
+    Ok
       (map
-         (function Result.Ok x -> x | Result.Error e -> err := Some e; raise Exit)
+         (function Ok x -> x | Error e -> err := Some e; raise Exit)
          l)
   with Exit ->
     begin match !err with
       | None -> assert false
-      | Some e -> Result.Error e
+      | Some e -> Error e
     end
 
-let group_by (type k) ?(hash=Hashtbl.hash) ?(eq=Pervasives.(=)) l =
+let group_by (type k) ?(hash=Hashtbl.hash) ?(eq=Stdlib.(=)) l =
   let module Tbl = Hashtbl.Make(struct type t = k let equal = eq let hash = hash end) in
   (* compute group table *)
   let tbl = Tbl.create 32 in
@@ -1054,7 +1129,7 @@ let join ~join_row s1 s2 : _ t =
   OUnit.assert_equal ["1 = 1"; "2 = 2"] s;
 *)
 
-let join_by (type a) ?(eq=Pervasives.(=)) ?(hash=Hashtbl.hash) f1 f2 ~merge c1 c2 =
+let join_by (type a) ?(eq=Stdlib.(=)) ?(hash=Hashtbl.hash) f1 f2 ~merge c1 c2 =
   let module Tbl = Hashtbl.Make(struct type t = a let equal = eq let hash = hash end) in
   let tbl = Tbl.create 32 in
   List.iter
@@ -1080,7 +1155,7 @@ type ('a, 'b) join_all_cell = {
   mutable ja_right: 'b list;
 }
 
-let join_all_by (type a) ?(eq=Pervasives.(=)) ?(hash=Hashtbl.hash) f1 f2 ~merge c1 c2 =
+let join_all_by (type a) ?(eq=Stdlib.(=)) ?(hash=Hashtbl.hash) f1 f2 ~merge c1 c2 =
   let module Tbl = Hashtbl.Make(struct type t = a let equal = eq let hash = hash end) in
   let tbl = Tbl.create 32 in
   (* build the map [key -> cell] *)
@@ -1108,7 +1183,7 @@ let join_all_by (type a) ?(eq=Pervasives.(=)) ?(hash=Hashtbl.hash) f1 f2 ~merge 
        | Some z -> z :: res)
     tbl []
 
-let group_join_by (type a) ?(eq=Pervasives.(=)) ?(hash=Hashtbl.hash) f c1 c2 =
+let group_join_by (type a) ?(eq=Stdlib.(=)) ?(hash=Hashtbl.hash) f c1 c2 =
   let module Tbl = Hashtbl.Make(struct type t = a let equal = eq let hash = hash end) in
   let tbl = Tbl.create 32 in
   List.iter (fun x -> Tbl.replace tbl x []) c1;
@@ -1130,12 +1205,8 @@ let group_join_by (type a) ?(eq=Pervasives.(=)) ?(hash=Hashtbl.hash) f c1 c2 =
   (group_join_by (fun s->s.[0]) \
     (CCString.to_list "abc") \
     ["abc"; "boom"; "attic"; "deleted"; "barbary"; "bop"] \
-  |> map (fun (c,l)->c,List.sort Pervasives.compare l) \
-  |> sort Pervasives.compare)
-*)
-
-(*$inject
-  open Result
+  |> map (fun (c,l)->c,List.sort Stdlib.compare l) \
+  |> sort Stdlib.compare)
 *)
 
 (*$=
@@ -1144,11 +1215,16 @@ let group_join_by (type a) ?(eq=Pervasives.(=)) ?(hash=Hashtbl.hash) f c1 c2 =
   (Error "e2") (all_ok [Ok 1; Error "e2"; Error "e3"; Ok 4])
 *)
 
-let mem ~eq x l =
+let mem ?(eq=Stdlib.(=)) x l =
   let rec search eq x l = match l with
     | [] -> false
     | y::l' -> eq x y || search eq x l'
   in search eq x l
+
+(*$Q mem
+  Q.(small_list small_int) (fun l -> \
+  mem 1 l = (List.mem 1 l))
+*)
 
 let add_nodup ~eq x l =
   if mem ~eq x l then l else x::l
@@ -1183,13 +1259,13 @@ let uniq ~eq l =
   in uniq eq [] l
 
 (*$T
-  uniq ~eq:CCInt.equal [1;2;3] |> List.sort Pervasives.compare = [1;2;3]
-  uniq ~eq:CCInt.equal [1;1;2;2;3;4;4;2;4;1;5] |> List.sort Pervasives.compare = [1;2;3;4;5]
+  uniq ~eq:CCInt.equal [1;2;3] |> List.sort Stdlib.compare = [1;2;3]
+  uniq ~eq:CCInt.equal [1;1;2;2;3;4;4;2;4;1;5] |> List.sort Stdlib.compare = [1;2;3;4;5]
 *)
 
 (*$Q
   Q.(small_list small_int) (fun l -> \
-    sort_uniq ~cmp:CCInt.compare l = (uniq ~eq:CCInt.equal l |> sort Pervasives.compare))
+    sort_uniq ~cmp:CCInt.compare l = (uniq ~eq:CCInt.equal l |> sort Stdlib.compare))
 *)
 
 let union ~eq l1 l2 =
@@ -1468,13 +1544,13 @@ module Assoc = struct
       ~f:(fun x _ l -> (x,y)::l)
 
   (*$T
-    Assoc.set ~eq:CCInt.equal 2 "two" [1,"1"; 2, "2"] |> List.sort Pervasives.compare \
+    Assoc.set ~eq:CCInt.equal 2 "two" [1,"1"; 2, "2"] |> List.sort Stdlib.compare \
       = [1, "1"; 2, "two"]
-    Assoc.set ~eq:CCInt.equal 3 "3" [1,"1"; 2, "2"] |> List.sort Pervasives.compare \
+    Assoc.set ~eq:CCInt.equal 3 "3" [1,"1"; 2, "2"] |> List.sort Stdlib.compare \
       = [1, "1"; 2, "2"; 3, "3"]
   *)
 
-  let mem ~eq x l =
+  let mem ?(eq=Stdlib.(=)) x l =
     try ignore (search_exn eq l x); true
     with Not_found -> false
 
@@ -1594,7 +1670,7 @@ end
 
 (** {2 Conversions} *)
 
-type 'a sequence = ('a -> unit) -> unit
+type 'a iter = ('a -> unit) -> unit
 type 'a gen = unit -> 'a option
 type 'a klist = unit -> [`Nil | `Cons of 'a * 'a klist]
 type 'a printer = Format.formatter -> 'a -> unit
@@ -1625,14 +1701,49 @@ let random_choose l = match l with
 
 let random_sequence l st = map (fun g -> g st) l
 
-let to_seq l k = List.iter k l
-let of_seq seq =
+let to_string ?(start="") ?(stop="") ?(sep=", ") item_to_string l =
+  let l = List.map item_to_string l in
+  start ^ (String.concat sep l) ^ stop
+
+(*$= to_string & ~printer:(fun s -> s)
+  (to_string string_of_int []) ""
+  (to_string ~start:"[" ~stop:"]" string_of_int []) "[]"
+  (to_string ~start:"[" ~stop:"]" string_of_int [1]) "[1]"
+  (to_string ~start:"[" ~stop:"]" string_of_int [1;2;3;4]) "[1, 2, 3, 4]"
+  (to_string ~sep:" " string_of_int [1;2;3;4]) "1 2 3 4"
+*)
+
+let to_iter l k = List.iter k l
+
+let rec to_std_seq l () = match l with
+  | [] -> Seq.Nil
+  | x :: tl -> Seq.Cons (x, to_std_seq tl)
+
+let of_iter i =
   let l = ref [] in
-  seq (fun x -> l := x :: !l);
+  i (fun x -> l := x :: !l);
   List.rev !l
 
+let of_std_seq_rev l =
+  let rec loop acc s = match s() with
+    | Seq.Nil -> acc
+    | Seq.Cons (x,tl) -> loop (x::acc) tl
+  in
+  loop [] l
+
+let of_std_seq l =
+  let rec direct i seq =
+    if i <= 0 then List.rev (of_std_seq_rev seq)
+    else (
+      match seq() with
+        | Seq.Nil -> []
+        | Seq.Cons (x, tl) -> x :: direct (i-1) tl
+    )
+  in
+  direct direct_depth_default_ l
+
 (*$Q
-  Q.(list int) (fun l -> of_seq (to_seq l) = l)
+  Q.(list int) (fun l -> of_iter (to_iter l) = l)
 *)
 
 let to_gen l =
@@ -1678,14 +1789,23 @@ let of_klist l =
   direct direct_depth_default_ l
 
 module Infix = struct
-  let (>|=) = (>|=)
+  let (>|=) l f = map f l
+  let (>>=) l f = flat_map f l
   let (@) = (@)
   let (<*>) = (<*>)
-  let (<$>) = (<$>)
-  let (>>=) = (>>=)
+  let (<$>) = map
   let (--) = (--)
   let (--^) = (--^)
+
+  include CCShimsMkLet_.Make(struct
+      type 'a t = 'a list
+    let (>|=) = (>|=)
+    let (>>=) = (>>=)
+      let monoid_product l1 l2 = product (fun x y -> x,y) l1 l2
+    end)
 end
+
+include Infix
 
 (** {2 IO} *)
 
@@ -1708,5 +1828,20 @@ let pp ?(start="") ?(stop="") ?(sep=", ") pp_item fmt l =
       (CCFormat.to_string \
         (CCFormat.hbox(CCList.pp ~start:"[" ~stop:"]" CCFormat.int)) \
         [1;2;3])
+*)
+
+
+(* test consistency of interfaces *)
+(*$inject
+  module type L = module type of CCList
+  module type LL = module type of CCListLabels
+*)
+
+(*$R
+  ignore (module CCListLabels : L)
+*)
+
+(*$R
+  ignore (module CCList : LL)
 *)
 

@@ -1,4 +1,3 @@
-
 (* This file is free software, part of containers. See file "license" for more details. *)
 
 (** {1 Error Monad}
@@ -7,17 +6,21 @@
 
     @since 0.16 *)
 
-type 'a sequence = ('a -> unit) -> unit
+type 'a iter = ('a -> unit) -> unit
+(** Fast internal iterator.
+    @since 2.8 *)
+
 type 'a equal = 'a -> 'a -> bool
 type 'a ord = 'a -> 'a -> int
 type 'a printer = Format.formatter -> 'a -> unit
 
 (** {2 Basics} *)
 
-include module type of struct include Result end
-(** @since 1.5 *)
+type nonrec (+'good, +'bad) result = ('good, 'bad) result =
+  | Ok of 'good
+  | Error of 'bad
 
-type (+'good, +'bad) t = ('good, 'bad) Result.result =
+type (+'good, +'bad) t = ('good, 'bad) result =
   | Ok of 'good
   | Error of 'bad
 
@@ -92,6 +95,10 @@ val get_or_failwith : ('a, string) t -> 'a
 (** [get_or_failwith e] returns [x] if [e = Ok x], fails otherwise.
     @raise Failure with [msg] if [e = Error msg].
     @since 2.4 *)
+
+val get_lazy : ('b -> 'a) -> ('a, 'b) t -> 'a
+(** [get_lazy default_fn x] unwraps [x], but if [x = Error e] it returns [default_fr e] instead.
+    @since NEXT_RELEASE *)
 
 val map_or : ('a -> 'b) ->  ('a, 'c) t -> default:'b -> 'b
 (** [map_or f e ~default] returns [f x] if [e = Ok x], [default] otherwise. *)
@@ -183,9 +190,24 @@ module Infix : sig
   (** [a <*> b] evaluates [a] and [b], and, in case of success, returns
       [Ok (a b)]. Otherwise, it fails, and the error of [a] is chosen
       over the error of [b] if both fail. *)
+
+  (** Let operators on OCaml >= 4.08.0, nothing otherwise
+      @since 2.8 *)
+  include CCShimsMkLet_.S2 with type ('a,'e) t_let2 := ('a,'e) result
 end
 
+(** Let operators on OCaml >= 4.08.0, nothing otherwise
+    @since 2.8 *)
+include CCShimsMkLet_.S2 with type ('a,'e) t_let2 := ('a,'e) result
+
+
 (** {2 Collections} *)
+
+val flatten_l : ('a, 'err) t list -> ('a list, 'err) t
+(** Same as [map_l id]: returns [Ok [x1;…;xn]] if [l=[Ok x1; …; Ok xn]],
+    or the first error otherwise.
+    @since 2.7
+*)
 
 val map_l : ('a -> ('b, 'err) t) -> 'a list -> ('b list, 'err) t
 (** [map_l f [a1; ...; an]] applies the function [f] to [a1, ..., an] , and, in case of
@@ -194,7 +216,8 @@ val map_l : ('a -> ('b, 'err) t) -> 'a list -> ('b list, 'err) t
 
 val fold_l : ('b -> 'a -> ('b, 'err) t) -> 'b -> 'a list -> ('b, 'err) t
 
-val fold_seq : ('b -> 'a -> ('b, 'err) t) -> 'b -> 'a sequence -> ('b, 'err) t
+val fold_iter : ('b -> 'a -> ('b, 'err) t) -> 'b -> 'a iter -> ('b, 'err) t
+(** @since 3.0 *)
 
 (** {2 Misc} *)
 
@@ -235,7 +258,11 @@ val to_opt : ('a, _) t -> 'a option
 val of_opt : 'a option -> ('a, string) t
 (** Convert an option to a result. *)
 
-val to_seq : ('a, _) t -> 'a sequence
+val to_iter : ('a, _) t -> 'a iter
+(** @since 2.8 *)
+
+val to_std_seq : ('a, _) t -> 'a Seq.t
+(** @since 2.8 *)
 
 type ('a, 'b) error = [`Ok of 'a | `Error of 'b]
 

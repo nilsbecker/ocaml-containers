@@ -1,10 +1,12 @@
 
 (* This file is free software, part of containers. See file "license" for more details. *)
 
-type t = int
-type 'a sequence = ('a -> unit) -> unit
+open CCShims_
 
-let equal (a:int) b = Pervasives.(=) a b
+type t = int
+type 'a iter = ('a -> unit) -> unit
+
+let equal (a:int) b = Stdlib.(=) a b
 
 let compare (a:int) b = compare a b
 
@@ -27,9 +29,9 @@ let range i j yield =
   if i<=j then up i j yield else down i j yield
 
 (*$= & ~printer:Q.Print.(list int)
-  [0;1;2;3;4;5] (range 0 5 |> Sequence.to_list)
-  [0]           (range 0 0 |> Sequence.to_list)
-  [5;4;3;2]     (range 5 2 |> Sequence.to_list)
+  [0;1;2;3;4;5] (range 0 5 |> Iter.to_list)
+  [0]           (range 0 0 |> Iter.to_list)
+  [5;4;3;2]     (range 5 2 |> Iter.to_list)
 *)
 
 let range' i j yield =
@@ -38,9 +40,9 @@ let range' i j yield =
   else range i (j+1) yield
 
 (*$= & ~printer:Q.Print.(list int)
-  []          (range' 0 0 |> Sequence.to_list)
-  [0;1;2;3;4] (range' 0 5 |> Sequence.to_list)
-  [5;4;3]     (range' 5 2 |> Sequence.to_list)
+  []          (range' 0 0 |> Iter.to_list)
+  [0;1;2;3;4] (range' 0 5 |> Iter.to_list)
+  [5;4;3]     (range' 5 2 |> Iter.to_list)
 *)
 
 let sign i =
@@ -78,8 +80,8 @@ module Infix : sig
   val (>) : t -> t -> bool
   val (<=) : t -> t -> bool
   val (>=) : t -> t -> bool
-  val (--) : t -> t -> t sequence
-  val (--^) : t -> t -> t sequence
+  val (--) : t -> t -> t iter
+  val (--^) : t -> t -> t iter
   val (+) : t -> t -> t
   val (-) : t -> t -> t
   val (~-) : t -> t
@@ -95,15 +97,15 @@ module Infix : sig
   val (lsr) : t -> int -> t
   val (asr) : t -> int -> t
 end = struct
-  include Pervasives
+  include Stdlib
   let (--) = range
   let (--^) = range'
   let ( ** ) = pow
 end
 include Infix
 
-let min : t -> t -> t = Pervasives.min
-let max : t -> t -> t = Pervasives.max
+let min : t -> t -> t = Stdlib.min
+let max : t -> t -> t = Stdlib.max
 
 let floor_div a n =
   if a < 0 && n >= 0 then
@@ -143,7 +145,7 @@ let floor_div a n =
       (fun (n, m) -> floor_div n (-m) = int_of_float @@ floor (float n /. float (-m)))
 *)
 
-let bool_neq (a : bool) b = Pervasives.(<>) a b
+let bool_neq (a : bool) b = Stdlib.(<>) a b
 
 let rem a n =
   let y = a mod n in
@@ -200,7 +202,20 @@ let to_string = string_of_int
 
 let of_string s =
   try Some (int_of_string s)
-  with _ -> None
+  with Failure _ -> None
+
+(*$=
+  None (of_string "moo")
+  (Some 42) (of_string "42")
+*)
+
+let of_string_exn = Stdlib.int_of_string
+
+let of_float = int_of_float
+
+(*$=
+  1 (of_float 1.2)
+*)
 
 type output = char -> unit
 
@@ -258,23 +273,23 @@ let range_by ~step i j yield =
 
 (* note: the last test checks that no error occurs due to overflows. *)
 (*$= & ~printer:Q.Print.(list int)
-  [0]     (range_by ~step:1   0 0     |> Sequence.to_list)
-  []      (range_by ~step:1   5 0     |> Sequence.to_list)
-  []      (range_by ~step:2   1 0     |> Sequence.to_list)
-  [0;2;4] (range_by ~step:2   0 4     |> Sequence.to_list)
-  [0;2;4] (range_by ~step:2   0 5     |> Sequence.to_list)
-  [0]     (range_by ~step:~-1 0 0     |> Sequence.to_list)
-  []      (range_by ~step:~-1 0 5     |> Sequence.to_list)
-  []      (range_by ~step:~-2 0 1     |> Sequence.to_list)
-  [5;3;1] (range_by ~step:~-2 5 1     |> Sequence.to_list)
-  [5;3;1] (range_by ~step:~-2 5 0     |> Sequence.to_list)
-  [0]     (range_by ~step:max_int 0 2 |> Sequence.to_list)
+  [0]     (range_by ~step:1   0 0     |> Iter.to_list)
+  []      (range_by ~step:1   5 0     |> Iter.to_list)
+  []      (range_by ~step:2   1 0     |> Iter.to_list)
+  [0;2;4] (range_by ~step:2   0 4     |> Iter.to_list)
+  [0;2;4] (range_by ~step:2   0 5     |> Iter.to_list)
+  [0]     (range_by ~step:~-1 0 0     |> Iter.to_list)
+  []      (range_by ~step:~-1 0 5     |> Iter.to_list)
+  []      (range_by ~step:~-2 0 1     |> Iter.to_list)
+  [5;3;1] (range_by ~step:~-2 5 1     |> Iter.to_list)
+  [5;3;1] (range_by ~step:~-2 5 0     |> Iter.to_list)
+  [0]     (range_by ~step:max_int 0 2 |> Iter.to_list)
 *)
 
 (*$Q
   Q.(pair small_int small_int) (fun (i,j) -> \
     let i = min i j and j = max i j in \
     CCList.equal CCInt.equal \
-      (CCInt.range_by ~step:1 i j |> Sequence.to_list) \
-      (CCInt.range i j |> Sequence.to_list) )
+      (CCInt.range_by ~step:1 i j |> Iter.to_list) \
+      (CCInt.range i j |> Iter.to_list) )
 *)

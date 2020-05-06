@@ -18,7 +18,11 @@
 
 type uchar = Uchar.t
 type 'a gen = unit -> 'a option
-type 'a sequence = ('a -> unit) -> unit
+
+type 'a iter = ('a -> unit) -> unit
+(** Fast internal iterator.
+    @since 2.8 *)
+
 
 type t = private string
 (** A UTF8 string *)
@@ -41,9 +45,16 @@ val to_gen : ?idx:int -> t -> uchar gen
 (** Generator of unicode codepoints.
     @param idx offset where to start the decoding. *)
 
-val to_seq : ?idx:int -> t -> uchar sequence
-(** Sequence of unicode codepoints.
-    @param idx offset where to start the decoding. *)
+val to_iter : ?idx:int -> t -> uchar iter
+(** Iterator of unicode codepoints.
+    @param idx offset where to start the decoding.
+    @since 2.8 *)
+
+val to_std_seq : ?idx:int -> t -> uchar Seq.t
+(** Iter of unicode codepoints.
+    @param idx offset where to start the decoding.
+    @since 2.8
+*)
 
 val to_list : ?idx:int -> t -> uchar list
 (** List of unicode codepoints.
@@ -69,7 +80,13 @@ val append : t -> t -> t
 
 val concat : t -> t list -> t
 
-val of_seq : uchar sequence -> t
+val of_std_seq : uchar Seq.t -> t
+(** Build a string from unicode codepoints
+    @since 2.8 *)
+
+val of_iter : uchar iter -> t
+(** Build a string from unicode codepoints
+    @since 2.8 *)
 
 val of_gen : uchar gen -> t
 
@@ -87,5 +104,8 @@ val is_valid : string -> bool
 
 val unsafe_of_string : string -> t
 (** Conversion from a string without validating.
-    Upon iteration, if an invalid substring is met, Malformed will be raised. *)
+    {b CAUTION} this is unsafe and can break all the other functions
+    in this module. Use only if you're sure the string is valid UTF8.
+    Upon iteration, if an invalid substring is met, Malformed will be raised.
+*)
 

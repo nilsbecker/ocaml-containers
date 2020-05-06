@@ -1,8 +1,7 @@
 (* This file is free software, part of containers. See file "license" for more details. *)
 
+open CCShims_
 include Int64
-
-let equal (x:t) y = Pervasives.(=) x y
 
 module Infix = struct
   let (+) = add
@@ -33,23 +32,18 @@ module Infix = struct
 
   let (=) = equal
 
-  let (<>) = Pervasives.(<>)
-  let (<) = Pervasives.(<)
-  let (<=) = Pervasives.(<=)
-  let (>) = Pervasives.(>)
-  let (>=) = Pervasives.(>=)
+  let (<>) = Stdlib.(<>)
+  let (<) = Stdlib.(<)
+  let (<=) = Stdlib.(<=)
+  let (>) = Stdlib.(>)
+  let (>=) = Stdlib.(>=)
 end
 
 include Infix
 
-let hash x = Pervasives.abs (to_int x)
+let hash x = Stdlib.abs (to_int x)
 
 (** {2 Conversion} *)
-
-let of_int_exn = of_int
-let of_nativeint_exn = of_nativeint
-let of_int32_exn = of_int32
-let of_float_exn = of_float
 
 let of_string_exn = of_string
 

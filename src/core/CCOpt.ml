@@ -1,4 +1,3 @@
-
 (* This file is free software, part of containers. See file "license" for more details. *)
 
 (** {1 Options} *)
@@ -39,15 +38,13 @@ let equal f o1 o2 = match o1, o2 with
 
 let return x = Some x
 
-let (>|=) x f = map f x
-
-let (>>=) o f = match o with
-  | None -> None
-  | Some x -> f x
-
 let flat_map f o = match o with
   | None -> None
   | Some x -> f x
+
+let bind o f = flat_map f o
+
+let (>>=) = bind
 
 let pure x = Some x
 
@@ -55,8 +52,6 @@ let (<*>) f x = match f, x with
   | None, _
   | _, None -> None
   | Some f, Some x -> Some (f x)
-
-let (<$>) = map
 
 let or_ ~else_ a = match a with
   | None -> else_
@@ -107,6 +102,10 @@ let get_or ~default x = match x with
   | None -> default
   | Some y -> y
 
+let value x ~default = match x with
+  | None -> default
+  | Some y -> y
+
 let get_exn = function
   | Some x -> x
   | None -> invalid_arg "CCOpt.get_exn"
@@ -148,26 +147,37 @@ let of_list = function
   | [] -> None
 
 let to_result err = function
-  | None -> Result.Error err
-  | Some x -> Result.Ok x
+  | None -> Error err
+  | Some x -> Ok x
 
 let to_result_lazy err_fn = function
-  | None -> Result.Error (err_fn ())
-  | Some x -> Result.Ok x
+  | None -> Error (err_fn ())
+  | Some x -> Ok x
 
 let of_result = function
-  | Result.Error _ -> None
-  | Result.Ok x -> Some x
+  | Error _ -> None
+  | Ok x -> Some x
 
 module Infix = struct
-  let (>|=) = (>|=)
+  let (>|=) x f = map f x
   let (>>=) = (>>=)
   let (<*>) = (<*>)
-  let (<$>) = (<$>)
+  let (<$>) = map
   let (<+>) = (<+>)
+
+  include CCShimsMkLet_.Make(struct
+      type 'a t = 'a option
+      let (>|=) = (>|=)
+      let (>>=) = (>>=)
+      let monoid_product o1 o2 = match o1, o2 with
+        | Some x, Some y -> Some (x,y)
+        | _ -> None
+    end)
 end
 
-type 'a sequence = ('a -> unit) -> unit
+include Infix
+
+type 'a iter = ('a -> unit) -> unit
 type 'a gen = unit -> 'a option
 type 'a printer = Format.formatter -> 'a -> unit
 type 'a random_gen = Random.State.t -> 'a
@@ -177,7 +187,7 @@ let random g st =
 
 exception ExitChoice
 
-let choice_seq s =
+let choice_iter s =
   let r = ref None in
   begin try
       s (function
@@ -189,9 +199,20 @@ let choice_seq s =
   !r
 
 (*$T
-  choice_seq (Sequence.of_list [None; Some 1; Some 2]) = Some 1
-  choice_seq Sequence.empty = None
-  choice_seq (Sequence.repeat None |> Sequence.take 100) = None
+  choice_iter (Iter.of_list [None; Some 1; Some 2]) = Some 1
+  choice_iter Iter.empty = None
+  choice_iter (Iter.repeat None |> Iter.take 100) = None
+*)
+
+let rec choice_seq s = match s() with
+  | Seq.Nil -> None
+  | Seq.Cons (Some x, _) -> Some x
+  | Seq.Cons (None, tl) -> choice_seq tl
+
+(*$T
+  choice_seq (CCSeq.of_list [None; Some 1; Some 2]) = Some 1
+  choice_seq CCSeq.empty = None
+  choice_seq (CCSeq.repeat None |> CCSeq.take 100) = None
 *)
 
 let to_gen o =
@@ -201,9 +222,15 @@ let to_gen o =
       let first = ref true in
       fun () -> if !first then (first:=false; o) else None
 
-let to_seq o k = match o with
+let to_iter o k = match o with
   | None -> ()
   | Some x -> k x
+
+let to_seq = to_iter
+
+let to_std_seq o () = match o with
+  | None -> Seq.Nil
+  | Some x -> Seq.Cons (x, Seq.empty)
 
 let pp ppx out = function
   | None -> Format.pp_print_string out "None"

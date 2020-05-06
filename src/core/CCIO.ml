@@ -3,7 +3,7 @@
 
 (** {1 IO Utils} *)
 
-type 'a or_error = ('a, string) Result.result
+type 'a or_error = ('a, string) result
 type 'a gen = unit -> 'a option
 
 let gen_empty () = None
@@ -65,16 +65,13 @@ let with_in ?(mode=0o644) ?(flags=[Open_text]) filename f =
   let ic = open_in_gen (Open_rdonly::flags) mode filename in
   finally_ f ic ~h:close_in
 
-let read_chunks ?(size=1024) ic =
+let read_chunks_gen ?(size=1024) ic =
   let buf = Bytes.create size in
-  let eof = ref false in
   let next() =
-    if !eof then None
-    else
-      let n = input ic buf 0 size in
-      if n = 0
-      then None
-      else Some (Bytes.sub_string buf 0 n)
+    let n = input ic buf 0 size in
+    if n = 0
+    then None
+    else Some (Bytes.sub_string buf 0 n)
   in
   next
 
@@ -82,7 +79,7 @@ let read_line ic =
   try Some (input_line ic)
   with End_of_file -> None
 
-let read_lines ic =
+let read_lines_gen ic =
   let stop = ref false in
   fun () ->
     if !stop then None
@@ -199,7 +196,7 @@ let write_lines_l oc l =
       (fun (name, oc) ->
         write_lines oc (Gen.of_list l);
         flush oc;
-        l' := with_in name (fun ic -> read_lines ic |> Gen.to_list);
+        l' := with_in name (fun ic -> read_lines_gen ic |> Gen.to_list);
       ) ();
      String.concat "\n" l = String.concat "\n" !l'
     )
@@ -218,14 +215,39 @@ let with_in_out ?(mode=0o644) ?(flags=[Open_creat]) filename f =
     close_in_noerr ic;
     raise e
 
+let copy_into ?(bufsize=4_096) ic oc : unit =
+  let buf = Bytes.create bufsize in
+  let cont = ref true in
+  while !cont do
+    let n = input ic buf 0 bufsize in
+    if n > 0 then (
+      output oc buf 0 n;
+    ) else (
+      cont := false
+    )
+  done
+
+(*$QR
+   Q.(list_of_size Gen.(0 -- 40) printable_string) (fun l ->
+     let s = ref "" in
+     OUnit.bracket_tmpfile ~prefix:"test_containers1" ~mode:[Open_creat; Open_trunc]
+      (fun (name1, oc1) ->
+        write_gen ~sep:"" oc1 (Gen.of_list l);
+        flush oc1;
+        OUnit.bracket_tmpfile ~prefix:"test_containers2" ~mode:[Open_creat; Open_trunc]
+          (fun (name2, oc2) ->
+             CCIO.with_in name1 (fun ic1 -> copy_into ic1 oc2);
+             flush oc2;
+             s := with_in name2 read_all;) ();
+      ) ();
+     String.concat "" l = !s
+    )
+*)
+
 let tee funs g () = match g() with
   | None -> None
   | Some x as res ->
-    List.iter
-      (fun f ->
-         try f x
-         with _ -> ()
-      ) funs;
+    List.iter (fun f -> f x) funs;
     res
 
 (* TODO: lines/unlines:  string gen -> string gen *)
@@ -255,28 +277,28 @@ module File = struct
   let remove_exn f = Sys.remove f
 
   let remove f =
-    try Result.Ok (Sys.remove f)
+    try Ok (Sys.remove f)
     with exn ->
-      Result.Error (Printexc.to_string exn)
+      Error (Printexc.to_string exn)
 
   let read_exn f = with_in f (read_all_ ~op:Ret_string ~size:4096)
 
   let read f =
-    try Result.Ok (read_exn f) with e -> Result.Error (Printexc.to_string e)
+    try Ok (read_exn f) with e -> Error (Printexc.to_string e)
 
   let append_exn f x =
     with_out ~flags:[Open_append; Open_creat; Open_text] f
       (fun oc -> output_string oc x; flush oc)
 
   let append f x =
-    try Result.Ok (append_exn f x) with e -> Result.Error (Printexc.to_string e)
+    try Ok (append_exn f x) with e -> Error (Printexc.to_string e)
 
   let write_exn f x =
     with_out f
       (fun oc -> output_string oc x; flush oc)
 
   let write f x =
-    try Result.Ok (write_exn f x) with e -> Result.Error (Printexc.to_string e)
+    try Ok (write_exn f x) with e -> Error (Printexc.to_string e)
 
   let remove_noerr f = try Sys.remove f with _ -> ()
 
