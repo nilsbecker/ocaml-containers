@@ -38,6 +38,11 @@ val map : ('a -> 'b) -> 'b t -> 'a t
     [map fst int] compares values of type [(int * 'a)]  by their
       first component. *)
 
+val always_eq : 'a t
+(** All values are equal. Useful for composing. *)
+let never_eq : 'a t
+(** No values are equal, not even when physically equal. Example: NaN. Use with caution. *) 
+
 module Infix : sig
   val (>|=) : 'b t -> ('a -> 'b) -> 'a t
   (** Infix equivalent of {!map}. *)
